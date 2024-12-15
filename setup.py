@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='your_project',
+    name='xorProject',
     version='0.1.0',
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
@@ -18,11 +18,11 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'your_project=src.main:main',
+            'xorProject=src.main:main',
         ],
     },
-    author='Your Name',
-    author_email='your.email@example.com',
-    description='A brief description of your project',
-    url='https://github.com/yourusername/your_project',
+    author='Bernd Jagla',
+    author_email='bernd.jagla@pasteur.fr',
+    description='XOR problem solver using genetic algorithms and machine learning.',
+    url='https://github.com/baj12/xorProject',
 )
