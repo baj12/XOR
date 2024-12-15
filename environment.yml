@@ -1,4 +1,4 @@
-name: manningPython3.10
+name: xorProject
 channels:
   - conda-forge
   - defaults
@@ -107,7 +107,6 @@ dependencies:
       - googleapis-common-protos==1.66.0
       - greenlet==3.1.1
       - grpcio==1.68.0
-      - grpcio-status==1.68.0
       - h11==0.14.0
       - h5py==3.12.1
       - httpcore==1.0.7
@@ -118,8 +117,6 @@ dependencies:
       - humanize==4.11.0
       - idna==3.10
       - importlib-resources==6.4.5
-      - jax==0.4.35
-      - jaxlib==0.4.35
       - jinja2==3.1.4
       - jiter==0.7.1
       - joblib==1.4.2
@@ -162,7 +159,7 @@ dependencies:
       - matplotlib==3.9.3
       - mdurl==0.1.2
       - memory-profiler==0.61.0
-      - ml-dtypes==0.3.2
+      - ml-dtypes~=0.3.1
       - mpmath==1.3.0
       - msgpack==1.1.0
       - multidict==6.1.0
@@ -244,4 +241,3 @@ dependencies:
       - werkzeug==3.1.3
       - wrapt==1.17.0
       - yarl==1.18.0
-prefix: /Users/bernd/Library/r-miniconda/envs/manningPython3.10
