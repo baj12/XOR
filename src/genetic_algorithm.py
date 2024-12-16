@@ -34,4 +34,6 @@ def run_genetic_algorithm():
     pool.close()
     pool.join()
 
+
     return population, log, hof
+

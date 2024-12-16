@@ -30,3 +30,7 @@ data/*.json
 
 # Windows
 Thumbs.db
+
+plots/*.png
+plots/
+data/raw/
