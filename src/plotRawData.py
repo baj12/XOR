@@ -30,25 +30,35 @@ def plot_data_from_directory(data_dir):
         12, 6*len(files)), squeeze=False)
     fig.suptitle('Data from raw files', fontsize=16)
 
+
     for i, file in enumerate(files):
         try:
             df = pd.read_csv(os.path.join(data_dir, file))
 
-            ax = axes[i, 0]
-            for column in df.select_dtypes(include=['float64', 'int64']):
-                ax.plot(df.index, df[column], label=column)
+            # Ensure there are at least three columns
+            if df.shape[1] < 3:
+                print(
+                    f"File {file} does not have at least three columns. Skipping.")
+                continue
 
-            ax.set_title(f'Data from {file}')
-            ax.set_xlabel('Index')
-            ax.set_ylabel('Value')
-            ax.legend()
+            x = df.iloc[:, 0]
+            y = df.iloc[:, 1]
+            color = df.iloc[:, 2]
+
+            plt.figure(figsize=(12, 6))
+            scatter = plt.scatter(x, y, c=color, cmap='viridis',
+                                alpha=0.7, edgecolors='w', linewidth=0.5)
+            plt.title(f'Data from {file}')
+            plt.xlabel(df.columns[0])
+            plt.ylabel(df.columns[1])
+            cbar = plt.colorbar(scatter)
+            cbar.set_label(df.columns[2])
+            plt.tight_layout()
+            plt.savefig(f'plots/{file}_scatter.png', dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"Plot saved for {file} as 'plots/{file}_scatter.png'.")
         except Exception as e:
             print(f"Error processing file {file}: {str(e)}")
-
-    plt.tight_layout()
-    plt.show()
-    plt.savefig('data_plot.png', dpi=300, bbox_inches='tight')
-
 
 def main():
     data_dir = 'data/raw'
