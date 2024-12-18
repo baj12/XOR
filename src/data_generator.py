@@ -73,7 +73,7 @@ def generate_xor_data(n_samples=10000, ratio_classes=1, noise_std=0.5, random_st
 
 
     # Create DataFrame
-    data = pd.DataFrame(X, columns=['feature1', 'feature2'])
+    data = pd.DataFrame(X, columns=['x', 'y'])
     data['label'] = y
 
     return data
