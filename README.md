@@ -32,6 +32,7 @@ python src/data_generator.py
 Run the main script:
 
 ```sh
-python src/main.py
+python src/main.py data/raw/xor_data.min1.csv
 ```
+
 
