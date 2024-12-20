@@ -1,25 +1,55 @@
 # model.py
 
 import datetime
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.optimizers import Adam, SGD, RMSprop
-from tensorflow.keras.callbacks import TensorBoard, EarlyStopping, ReduceLROnPlateau
-import pandas as pd
+import logging
+from pathlib import Path
 
-def build_and_train_model(hall_of_fame, df: pd.DataFrame, 
-                          test_size: float = 0.2, 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.callbacks import (EarlyStopping, ReduceLROnPlateau,
+                                        TensorBoard)
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import SGD, Adam, RMSprop
+
+from utils import Config
+
+# Setup logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('debug.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+class CustomDebugCallback(tf.keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        logger.debug(
+            f"Epoch {epoch+1} - loss: {logs.get('loss'):.4f}, "
+            f"accuracy: {logs.get('accuracy'):.4f}, "
+            f"val_loss: {logs.get('val_loss'):.4f}, "
+            f"val_accuracy: {logs.get('val_accuracy'):.4f}"
+        )
+
+
+def build_and_train_model(initial_weights, df: pd.DataFrame,
+                          config: Config,
+                          test_size: float = 0.2,
                           random_state: int = 42,
                           model_save_path: str = 'models/best_model.h5',
                           plot_accuracy_path: str = 'plots/best_model_accuracy.png',
                           plot_loss_path: str = 'plots/best_model_loss.png'):
     """
-    Builds and trains a Keras model using the best individual from the genetic algorithm.
+    Builds and trains a Keras model using the initial weights provided by the genetic algorithm.
 
     Parameters:
-    - hall_of_fame (deap.tools.HallOfFame): Contains the best individuals from the genetic algorithm.
+    - initial_weights (list): Flattened list of weights to initialize the model.
     - df (pd.DataFrame): DataFrame containing the dataset with 'x', 'y', 'label' columns.
     - test_size (float): Proportion of the dataset to include in the test split. (default: 0.2)
     - random_state (int): Controls the shuffling applied to the data before applying the split. (default: 42)
@@ -27,119 +57,204 @@ def build_and_train_model(hall_of_fame, df: pd.DataFrame,
     - plot_accuracy_path (str): Filepath to save the accuracy plot. (default: 'plots/best_model_accuracy.png')
     - plot_loss_path (str): Filepath to save the loss plot. (default: 'plots/best_model_loss.png')
     """
-    # Extract the best individual
-    best_individual = hall_of_fame[0]
-    
-    # Assuming the best_individual has attributes hl1, hl2, optimizer, lr
-    # If best_individual is a list, adjust attribute access accordingly
-    # Example: [hl1, hl2, optimizer, lr]
-    try:
-        hl1 = best_individual[0]
-        hl2 = best_individual[1]
-        optimizer_choice = best_individual[2]
-        learning_rate = best_individual[3]
-    except (IndexError, TypeError):
-        raise ValueError("Best individual does not have the required attributes: hl1, hl2, optimizer, lr.")
-    
+    # Debug data information
+    logger.debug(f"DataFrame shape: {df.shape}")
+    logger.debug(f"DataFrame columns: {df.columns.tolist()}")
+    logger.debug(f"DataFrame head:\n{df.head()}")
+
+    # Validate input data
+    if df.empty:
+        logger.error("Empty DataFrame provided")
+        raise ValueError("Empty DataFrame")
+
+    if not all(col in df.columns for col in ['x', 'y', 'label']):
+        logger.error("Missing required columns")
+        raise ValueError("DataFrame must contain 'x', 'y', 'label' columns")
+
+    # Debug initial weights
+    logger.debug(f"Initial weights length: {len(initial_weights)}")
+    logger.debug(
+        f"Initial weights range: [{min(initial_weights)}, {max(initial_weights)}]")
+
     # Split the data into features and labels
     X = df[['x', 'y']].values
     y = df['label'].values
-    
-    # Perform train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
-    )
-    
-    # Build the model
-    model = Sequential()
-    model.add(Input(shape=(2,)))  # Input layer matching feature dimensions
-    model.add(Dense(hl1, activation='relu'))
-    model.add(Dense(hl2, activation='relu'))
-    model.add(Dense(1, activation='sigmoid'))  # Output layer for binary classification
-    
-    # Select optimizer based on the individual's choice
-    optimizer = select_optimizer(optimizer_choice, learning_rate)
-    
-    # Compile the model
+
+    logger.debug(f"Features shape: {X.shape}")
+    logger.debug(f"Labels shape: {y.shape}")
+
+    # Create output directories
+    Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(plot_accuracy_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # Build and configure model with debug info
+    model = build_model(config=Config())
+    logger.debug(f"Model summary:\n{model.get_config()}")
+
+    # Add debug callbacks
+    callbacks = [
+        TensorBoard(log_dir='./logs', histogram_freq=1),
+        EarlyStopping(monitor='val_loss', patience=10, verbose=1),
+        ReduceLROnPlateau(monitor='val_loss', factor=0.2,
+                          patience=5, verbose=1),
+        CustomDebugCallback()  # Custom callback for detailed monitoring
+    ]
+
+    # Set the initial weights from the genetic algorithm
+    try:
+        weight_tuples = []
+        idx = 0
+        for layer in model.layers:
+            weights_shape = layer.get_weights()
+            if weights_shape:
+                weight_shape = weights_shape[0].shape
+                bias_shape = weights_shape[1].shape
+                weight_size = np.prod(weight_shape)
+                bias_size = np.prod(bias_shape)
+
+                weights = np.array(
+                    initial_weights[idx:idx+weight_size]).reshape(weight_shape)
+                weight_tuples.append(weights)
+                idx += weight_size
+
+                biases = np.array(
+                    initial_weights[idx:idx+bias_size]).reshape(bias_shape)
+                weight_tuples.append(biases)
+                idx += bias_size
+        model.set_weights(weight_tuples)
+    except Exception as e:
+        print(f"Error setting initial weights: {e}")
+        return
+
+    # Compile the model with a chosen optimizer
+    # You can modify or parameterize this
+    optimizer = Adam(learning_rate=0.001)
     model.compile(optimizer=optimizer,
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
-    
+                  loss='binary_crossentropy', metrics=['accuracy'])
+
     # Setup TensorBoard and Callbacks
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir_final = f"logs/fit/{timestamp}"
     tensorboard_callback = TensorBoard(log_dir=log_dir_final, histogram_freq=1)
-    early_stop_final = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-    reduce_lr_final = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
-    
+    early_stop_final = EarlyStopping(
+        monitor='val_loss', patience=10, restore_best_weights=True)
+    reduce_lr_final = ReduceLROnPlateau(
+        monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
+
     # Ensure directories exist
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
     os.makedirs(os.path.dirname(plot_accuracy_path), exist_ok=True)
     os.makedirs(os.path.dirname(plot_loss_path), exist_ok=True)
-    
+
     # Train the model
     history = model.fit(
         X_train, y_train,
         epochs=100,
-        batch_size=32,
-        validation_split=0.1,
+        batch_size=16,
+        validation_data=(X_val, y_val),
         callbacks=[tensorboard_callback, early_stop_final, reduce_lr_final],
         verbose=1
     )
-    
-    # Evaluate the model
-    train_loss, train_accuracy = model.evaluate(X_train, y_train, verbose=0)
-    print(f"Training Accuracy: {train_accuracy * 100:.2f}%")
-    test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
-    print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
-    
+    logger.debug("Model training completed")
+
     # Save the trained model
     model.save(model_save_path)
-    print(f"Model saved to {model_save_path}")
-    
-    # Plot training and validation accuracy
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['accuracy'], label='Training Accuracy', color='blue')
-    plt.plot(history.history['val_accuracy'], label='Validation Accuracy', color='orange')
-    plt.title('Best Model Training Accuracy Over Epochs')
-    plt.xlabel('Epoch')
+    logger.info(f"Model saved to {model_save_path}")
+
+    # Plot training & validation accuracy values
+    plt.figure()
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Model Accuracy')
     plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
     plt.legend(loc='lower right')
-    plt.grid(True)
     plt.savefig(plot_accuracy_path)
     plt.close()
-    print(f"Accuracy plot saved to {plot_accuracy_path}")
-    
-    # Plot training and validation loss
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['loss'], label='Training Loss', color='blue')
-    plt.plot(history.history['val_loss'], label='Validation Loss', color='orange')
-    plt.title('Best Model Training Loss Over Epochs')
-    plt.xlabel('Epoch')
+    logger.info(f"Accuracy plot saved to {plot_accuracy_path}")
+
+    # Plot training & validation loss values
+    plt.figure()
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss')
     plt.ylabel('Loss')
+    plt.xlabel('Epoch')
     plt.legend(loc='upper right')
-    plt.grid(True)
     plt.savefig(plot_loss_path)
     plt.close()
-    print(f"Loss plot saved to {plot_loss_path}")
+    logger.info(f"Loss plot saved to {plot_loss_path}")
 
-def select_optimizer(choice: str, lr: float):
+
+def build_model(config: Config) -> Sequential:
     """
-    Selects and returns the optimizer based on the choice and learning rate.
+    Builds and returns a Keras Sequential model using configuration parameters.
 
     Parameters:
-    - choice (str): Optimizer type ('adam', 'sgd', 'rmsprop').
-    - lr (float): Learning rate.
+    - config (Config): Configuration object containing model parameters.
 
     Returns:
-    - optimizer (keras.optimizers.Optimizer): Configured optimizer.
+    - model (Sequential): Compiled Keras model.
     """
-    if choice.lower() == 'adam':
+    logger.debug("Starting build_model")
+    logger.debug(f"Model configuration: {config.model}")
+
+    model = Sequential()
+    model.add(Input(shape=(2,)))  # Input layer matching feature dimensions
+
+    # Add first hidden layer
+    model.add(Dense(
+        units=config.model.hl1,
+        activation=config.model.activation,
+        name='hidden_layer_1'
+    ))
+    logger.debug(
+        f"Added hidden_layer_1 with {config.model.hl1} units and '{config.model.activation}' activation.")
+
+    # Add second hidden layer
+    model.add(Dense(
+        units=config.model.hl2,
+        activation=config.model.activation,
+        name='hidden_layer_2'
+    ))
+    logger.debug(
+        f"Added hidden_layer_2 with {config.model.hl2} units and '{config.model.activation}' activation.")
+
+    # Output layer for binary classification
+    model.add(Dense(1, activation='sigmoid', name='output_layer'))
+    logger.debug("Added output_layer with 1 unit and 'sigmoid' activation.")
+
+    # Configure optimizer
+    optimizer = get_optimizer(config.model.optimizer, config.model.lr)
+    logger.debug(
+        f"Configured optimizer: {config.model.optimizer} with learning rate {config.model.lr}")
+
+    # Compile the model
+    model.compile(optimizer=optimizer,
+                  loss='binary_crossentropy', metrics=['accuracy'])
+    logger.debug("Model compiled successfully.")
+
+    return model
+
+
+def get_optimizer(name: str, lr: float):
+    """
+    Returns a Keras optimizer based on the given name and learning rate.
+
+    Parameters:
+    - name (str): Name of the optimizer ('adam', 'sgd', 'rmsprop', etc.).
+    - lr (float): Learning rate for the optimizer.
+
+    Returns:
+    - optimizer: Keras optimizer instance.
+    """
+    if name.lower() == 'adam':
         return Adam(learning_rate=lr)
-    elif choice.lower() == 'sgd':
+    elif name.lower() == 'sgd':
         return SGD(learning_rate=lr)
-    elif choice.lower() == 'rmsprop':
+    elif name.lower() == 'rmsprop':
         return RMSprop(learning_rate=lr)
     else:
-        print(f"Unknown optimizer choice '{choice}'. Defaulting to Adam.")
+        logger.warning(
+            f"Optimizer '{name}' not recognized. Using 'adam' as default.")
         return Adam(learning_rate=lr)

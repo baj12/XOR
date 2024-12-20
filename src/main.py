@@ -1,56 +1,13 @@
+# main.py
+
 import argparse
-import os
 import sys
-import pandas as pd
-from genetic_algorithm import run_genetic_algorithm
+
+from sklearn.model_selection import train_test_split
+
+from genetic_algorithm import GeneticAlgorithm
 from model import build_and_train_model
-from utils import plot_results
-
-
-def validate_file(filepath):
-    """
-    Validates that the provided filepath is a CSV file with the required structure:
-    - Three columns: 'x', 'y', 'label'
-    - 'x' and 'y' are floats
-    - 'label' is an integer
-
-    Parameters:
-    - filepath (str): Path to the CSV file.
-
-    Returns:
-    - df (DataFrame): Validated pandas DataFrame.
-
-    Raises:
-    - ValueError: If any validation fails.
-    """
-    # Check if file exists
-    if not os.path.isfile(filepath):
-        raise ValueError(f"File '{filepath}' does not exist.")
-
-    # Check file extension
-    if not filepath.lower().endswith('.csv'):
-        raise ValueError(f"File '{filepath}' is not a CSV file.")
-
-    try:
-        df = pd.read_csv(filepath)
-    except Exception as e:
-        raise ValueError(f"Error reading '{filepath}': {e}")
-
-    # Check number of columns
-    expected_columns = ['x', 'y', 'label']
-    if list(df.columns) != expected_columns:
-        raise ValueError(
-            f"CSV file must have exactly three columns: {expected_columns}. Found columns: {list(df.columns)}")
-
-    # Validate data types
-    if not pd.api.types.is_float_dtype(df['x']):
-        raise ValueError("Column 'x' must contain float values.")
-    if not pd.api.types.is_float_dtype(df['y']):
-        raise ValueError("Column 'y' must contain float values.")
-    if not pd.api.types.is_integer_dtype(df['label']):
-        raise ValueError("Column 'label' must contain integer values.")
-
-    return df
+from utils import load_config, plot_results, validate_file
 
 
 def parse_arguments():
@@ -70,6 +27,10 @@ def parse_arguments():
 def main():
     args = parse_arguments()
     filepath = args.filepath
+    config = load_config('config/config.yaml')
+    # Access config values
+    population_size = config.ga.population_size
+    learning_rate = config.model.lr
 
     try:
         # Validate the input file
@@ -79,25 +40,36 @@ def main():
         print(f"Validation Error: {ve}")
         sys.exit(1)
 
-    # Proceed with Genetic Algorithm
+    # Split data into training and validation sets
+    X_train, X_val, y_train, y_val = train_test_split(
+        df[['x', 'y']].values,
+        df['label'].values,
+        test_size=0.2,
+        random_state=42,
+        stratify=df['label'].values
+    )
+
+    # Initialize and run Genetic Algorithm
     try:
-        final_population, logbook, hall_of_fame = run_genetic_algorithm(df)
-        print("\nGenetic Algorithm completed successfully.")
+        ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
+        pop, log = ga.run()
+        print("Genetic Algorithm executed successfully.")
     except Exception as e:
         print(f"Error during Genetic Algorithm execution: {e}")
         sys.exit(1)
 
-    # Display the best individuals
+    # Display the best individual
     try:
-        print("\nBest Individuals:")
-        for ind in hall_of_fame:
-            print(ind, ind.fitness.values)
+        best_individual = hall_of_fame[0]
+        print("\nBest Individual (Initial Weights):")
+        print(best_individual)
+        print(f"Fitness: {best_individual.fitness.values}")
     except Exception as e:
-        print(f"Error displaying best individuals: {e}")
+        print(f"Error displaying best individual: {e}")
 
-    # Build and train the best model
+    # Build and train the model using the best individual's weights
     try:
-        build_and_train_model(hall_of_fame, df)
+        build_and_train_model(best_individual, df)
         print("\nModel training completed successfully.")
     except Exception as e:
         print(f"Error during model training: {e}")
@@ -105,8 +77,8 @@ def main():
 
     # Plot and save results
     try:
-        plot_results(logbook, 'results_plot.png')
-        print("Results plot saved as 'results_plot.png'.")
+        plot_results(logbook)
+        print("Results plot saved successfully.")
     except Exception as e:
         print(f"Error during plotting results: {e}")
 

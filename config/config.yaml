@@ -4,6 +4,7 @@ ga:
   cxpb: 0.5
   mutpb: 0.2
   ngen: 40
+  n_processes: 4
 
 # Model Parameters
 model:
