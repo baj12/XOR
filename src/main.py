@@ -7,7 +7,8 @@ from sklearn.model_selection import train_test_split
 
 from genetic_algorithm import GeneticAlgorithm
 from model import build_and_train_model
-from utils import load_config, plot_results, validate_file
+from utils import (load_config, load_results, plot_results, save_results,
+                   validate_file)
 
 
 def parse_arguments():
@@ -21,6 +22,12 @@ def parse_arguments():
         description="Run XOR Project with Input CSV Data.")
     parser.add_argument(
         'filepath', type=str, help='Path to the input CSV file containing x, y, label columns.')
+    parser.add_argument(
+        '--save', action='store_true', help='Save the GA results after execution.'
+    )
+    parser.add_argument(
+        '--load', type=str, help='Path to load previous GA results.'
+    )
     return parser.parse_args()
 
 
@@ -41,39 +48,59 @@ def main():
     args = parse_arguments()
     filepath = args.filepath
     config = load_config('config/config.yaml')
+
     # Access config values
     population_size = config.ga.population_size
     learning_rate = config.model.lr
 
-    try:
-        # Validate the input file
-        df = validate_file(filepath)
-        print(f"Successfully validated the input file: '{filepath}'")
-    except ValueError as ve:
-        print(f"Validation Error: {ve}")
-        sys.exit(1)
+    if args.load:
+        try:
+            data = load_results(args.load)
+            best_individual = data['best_individual']
+            logbook = data['logbook']
+            print("Loaded previous GA results successfully.")
+        except Exception as e:
+            print(f"Error loading previous results: {e}")
+            sys.exit(1)
+    else:
+        try:
+            # Validate the input file
+            df = validate_file(filepath)
+            print(f"Successfully validated the input file: '{filepath}'")
+        except ValueError as ve:
+            print(f"Validation Error: {ve}")
+            sys.exit(1)
 
-    # Split data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(
-        df[['x', 'y']].values,
-        df['label'].values,
-        test_size=0.2,
-        random_state=42,
-        stratify=df['label'].values
-    )
+        # Split data into training and validation sets
+        X_train, X_val, y_train, y_val = train_test_split(
+            df[['x', 'y']].values,
+            df['label'].values,
+            test_size=0.2,
+            random_state=42,
+            stratify=df['label'].values
+        )
 
-    # Initialize and run Genetic Algorithm
-    try:
-        ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
-        pop, log = ga.run()
-        print("Genetic Algorithm executed successfully.")
-    except Exception as e:
-        print(f"Error during Genetic Algorithm execution: {e}")
-        sys.exit(1)
+        # Initialize and run Genetic Algorithm
+        try:
+            ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
+            best_individual, logbook = ga.run()
+            print("Genetic Algorithm executed successfully.")
+        except Exception as e:
+            print(f"Error during Genetic Algorithm execution: {e}")
+            sys.exit(1)
+        # Optionally save results
+        if args.save:
+            try:
+                # best_individual = logbook.select("best")[0]
+                print(f"saving results: ")
+                save_results(best_individual, logbook)
+                print("Results saved successfully.")
+            except Exception as e:
+                print(f"Error saving results: {e}")
 
     # Display the best individual
     try:
-        best_individual = hall_of_fame[0]
+        # best_individual = hall_of_fame[0]
         print("\nBest Individual (Initial Weights):")
         print(best_individual)
         print(f"Fitness: {best_individual.fitness.values}")

@@ -1,5 +1,6 @@
 import datetime
 import os
+import pickle
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -135,3 +136,40 @@ def validate_file(filepath):
 
     except Exception as e:
         raise ValueError(f"Error reading CSV file: {str(e)}")
+
+
+def save_results(best_individual, logbook, filepath='results/ga_results.pkl'):
+    """
+    Saves the best individual and logbook to a file using pickle.
+
+    Parameters:
+    - best_individual: The best individual from the GA run.
+    - logbook: The logbook containing GA run statistics.
+    - filepath (str): Path where the results will be saved.
+    """
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_filepath = os.path.join(filepath, f'ga_results_{timestamp}.pkl')
+
+    with open(full_filepath, 'wb') as f:
+        pickle.dump(
+            {'best_individual': best_individual, 'logbook': logbook}, f)
+    print(f"Results saved to {full_filepath}")
+
+
+def load_results(filepath='results/ga_results.pkl'):
+    """
+    Loads the best individual and logbook from a file.
+
+    Parameters:
+    - filepath (str): Path from where the results will be loaded.
+
+    Returns:
+    - data (dict): Dictionary containing 'best_individual' and 'logbook'.
+    """
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"No results found at {filepath}")
+    with open(filepath, 'rb') as f:
+        data = pickle.load(f)
+    print(f"Results loaded from {filepath}")
+    return data

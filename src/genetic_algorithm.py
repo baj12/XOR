@@ -2,8 +2,10 @@
 
 import logging
 import multiprocessing as mp
+import os
 import random
 from contextlib import contextmanager
+from datetime import datetime
 from functools import partial
 
 import matplotlib.pyplot as plt
@@ -125,7 +127,7 @@ class GeneticAlgorithm:
         with managed_pool(processes=self.config.ga.n_processes) as pool:
             self.toolbox.register("map", pool.map)
             logger.info("Starting Genetic Algorithm execution.")
-            pop, log = algorithms.eaSimple(
+            pop, logbook = algorithms.eaSimple(
                 population=pop,
                 toolbox=self.toolbox,
                 cxpb=self.config.ga.cxpb,
@@ -137,7 +139,12 @@ class GeneticAlgorithm:
             )
             logger.info("Genetic Algorithm execution completed.")
 
-        return pop, log
+        # Retrieve the best individual from Hall of Fame
+        best_individual = hof[0] if hof else None
+        logger.debug(
+            f"Best Individual: {best_individual}, Fitness: {best_individual.fitness.values if best_individual else 'N/A'}")
+
+        return best_individual, logbook
 
 
 def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
@@ -188,6 +195,13 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             verbose=0
         )
         logger.debug("Model training completed.")
+        filepath = "results"
+        os.makedirs(filepath, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_filepath = os.path.join(filepath, f'ga_results_{timestamp}.keras')
+
+        model.save(full_filepath)
+        logger.info(f"Trained model saved to {full_filepath}.")
 
         # Evaluate the model
         val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)

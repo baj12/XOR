@@ -34,3 +34,5 @@ Thumbs.db
 plots/*.png
 plots/
 data/raw/
+
+results/
