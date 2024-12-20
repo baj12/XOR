@@ -34,7 +34,15 @@ class Config:
 
 
 def load_config(config_path: str) -> Config:
-    """Load configuration from YAML file"""
+    """
+    Load configuration from YAML file.
+
+    Parameters:
+    - config_path (str): Path to the YAML configuration file.
+
+    Returns:
+    - config (Config): Configuration object containing GA and model parameters.
+    """
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
 
@@ -45,6 +53,12 @@ def load_config(config_path: str) -> Config:
 
 
 def plot_results(logbook):
+    """
+    Plot the results of the genetic algorithm.
+
+    Parameters:
+    - logbook (Logbook): Logbook containing statistics of the evolution.
+    """
     generations = logbook.select("gen")
     avg_fitness = logbook.select("avg")
     max_fitness = logbook.select("max")

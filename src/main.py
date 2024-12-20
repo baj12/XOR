@@ -25,6 +25,19 @@ def parse_arguments():
 
 
 def main():
+    """
+    Main function to run the XOR project.
+
+    Steps:
+    1. Parse command-line arguments.
+    2. Load configuration from YAML file.
+    3. Validate the input CSV file.
+    4. Split data into training and validation sets.
+    5. Initialize and run the Genetic Algorithm.
+    6. Display the best individual from the Genetic Algorithm.
+    7. Build and train the model using the best individual's weights.
+    8. Plot and save the results.
+    """
     args = parse_arguments()
     filepath = args.filepath
     config = load_config('config/config.yaml')

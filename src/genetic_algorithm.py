@@ -59,7 +59,12 @@ class GeneticAlgorithm:
         self.setup_deap()
 
     def calculate_total_weights(self) -> int:
-        """Calculate the total number of weights based on the model architecture."""
+        """
+        Calculate the total number of weights based on the model architecture.
+
+        Returns:
+        - total_weights (int): Total number of weights in the model.
+        """
         model = self.model
         total_weights = 0
         for layer in model.layers:
@@ -71,7 +76,9 @@ class GeneticAlgorithm:
         return total_weights
 
     def setup_deap(self):
-        """Set up the DEAP framework for the Genetic Algorithm."""
+        """
+        Set up the DEAP framework for the Genetic Algorithm.
+        """
         # Prevent redefining creator classes
         if not hasattr(creator, "FitnessMax"):
             creator.create("FitnessMax", base.Fitness,
@@ -93,7 +100,13 @@ class GeneticAlgorithm:
         self.toolbox.register("select", tools.selTournament, tournsize=3)
 
     def run(self):
-        """Execute the Genetic Algorithm."""
+        """
+        Execute the Genetic Algorithm.
+
+        Returns:
+        - pop (list): Final population.
+        - log (Logbook): Logbook containing statistics of the evolution.
+        """
        # Use functools.partial to pass necessary data to eval_individual
         eval_func = partial(eval_individual, config=self.config,
                             X_train=self.X_train, X_val=self.X_val,
@@ -128,7 +141,20 @@ class GeneticAlgorithm:
 
 
 def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
-    """Evaluate an individual's fitness based on validation accuracy."""
+    """
+    Evaluate an individual's fitness based on validation accuracy.
+
+    Parameters:
+    - individual (list): List of weights representing an individual.
+    - config (Config): Configuration object containing model parameters.
+    - X_train (np.ndarray): Training features.
+    - X_val (np.ndarray): Validation features.
+    - y_train (np.ndarray): Training labels.
+    - y_val (np.ndarray): Validation labels.
+
+    Returns:
+    - fitness (tuple): Validation accuracy as a tuple.
+    """
     logger.info("Starting evaluation of individual.")
     try:
         # Build the model

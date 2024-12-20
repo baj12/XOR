@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 
 class CustomDebugCallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
+        """
+        Custom callback to log detailed information at the end of each epoch.
+
+        Parameters:
+        - epoch (int): Current epoch number.
+        - logs (dict): Dictionary of logs containing loss and accuracy metrics.
+        """
         logger.debug(
             f"Epoch {epoch+1} - loss: {logs.get('loss'):.4f}, "
             f"accuracy: {logs.get('accuracy'):.4f}, "
@@ -51,6 +58,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     Parameters:
     - initial_weights (list): Flattened list of weights to initialize the model.
     - df (pd.DataFrame): DataFrame containing the dataset with 'x', 'y', 'label' columns.
+    - config (Config): Configuration object containing model parameters.
     - test_size (float): Proportion of the dataset to include in the test split. (default: 0.2)
     - random_state (int): Controls the shuffling applied to the data before applying the split. (default: 42)
     - model_save_path (str): Filepath to save the trained model. (default: 'models/best_model.h5')
