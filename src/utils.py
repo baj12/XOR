@@ -1,7 +1,8 @@
-import datetime
 import os
 import pickle
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict
 
 import matplotlib.pyplot as plt
@@ -148,8 +149,11 @@ def save_results(best_individual, logbook, filepath='results/ga_results.pkl'):
     - filepath (str): Path where the results will be saved.
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    unique_id = uuid.uuid4()
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    full_filepath = os.path.join(filepath, f'ga_results_{timestamp}.pkl')
+    full_filepath = os.path.join(
+        filepath, f'ga_results_{timestamp}_{unique_id}.pkl')
 
     with open(full_filepath, 'wb') as f:
         pickle.dump(
