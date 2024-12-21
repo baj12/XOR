@@ -141,7 +141,7 @@ class GeneticAlgorithm:
         stats.register("std", np.std)
         stats.register("min", np.min)
         stats.register("max", np.max)
-
+        print(multiprocessing.get_start_method())
         with managed_pool(processes=self.config.ga.n_processes) as pool:
             self.toolbox.register("map", pool.map)
             pid = os.getpid()

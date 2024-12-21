@@ -1,6 +1,7 @@
 # main.py
 
 import argparse
+import multiprocessing
 import sys
 from datetime import datetime
 
@@ -8,6 +9,7 @@ from sklearn.model_selection import train_test_split
 
 from genetic_algorithm import GeneticAlgorithm
 from model import build_and_train_model
+from plotRawData import plot_train_test_with_decision_boundary
 from utils import (load_config, load_results, plot_results, save_results,
                    validate_file)
 
@@ -22,7 +24,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Run XOR Project with Input CSV Data.")
     parser.add_argument(
-        'filepath', type=str, help='Path to the input CSV file containing x, y, label columns.')
+        'filepath', type=str,
+        help='Path to the input CSV file containing x, y, label columns.')
     parser.add_argument(
         '--save', action='store_true', help='Save the GA results after execution.'
     )
@@ -136,4 +139,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # chatGPT suggests using 'spawn' method for macOS to avoid issues with TensorFlow/Keras
+    multiprocessing.set_start_method("spawn")
     main()
