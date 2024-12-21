@@ -8,8 +8,8 @@ ga:
 
 # Model Parameters
 model:
-  hl1: 2
-  hl2: 1
+  hl1: 1
+  hl2: 2
   activation: "relu"
   optimizer: "adam"
   lr: 0.001
