@@ -65,7 +65,7 @@ def plot_results(logbook):
     avg_fitness = logbook.select("avg")
     max_fitness = logbook.select("max")
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # Plot Average and Max Fitness
     plt.figure(figsize=(10, 6))
@@ -155,6 +155,7 @@ def save_results(best_individual, logbook, filepath='results/ga_results.pkl'):
     full_filepath = os.path.join(
         filepath, f'ga_results_{timestamp}_{unique_id}.pkl')
 
+    print(f"saving to {full_filepath}")
     with open(full_filepath, 'wb') as f:
         pickle.dump(
             {'best_individual': best_individual, 'logbook': logbook}, f)

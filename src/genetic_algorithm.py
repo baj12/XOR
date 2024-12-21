@@ -4,6 +4,7 @@ import logging
 import multiprocessing as mp
 import os
 import random
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
@@ -59,6 +60,8 @@ class GeneticAlgorithm:
         self.model = build_model(config)
         self.total_weights = self.calculate_total_weights()
         self.setup_deap()
+        self.pool = mp.Pool(processes=self.config.ga.n_processes)
+        self.toolbox.register("map", self.pool.map)
 
     def calculate_total_weights(self) -> int:
         """
@@ -198,7 +201,9 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_filepath = os.path.join(filepath, f'ga_results_{timestamp}.keras')
+        unique_id = uuid.uuid4()
+        full_filepath = os.path.join(
+            filepath, f'ga_results_{timestamp}_{unique_id}.keras')
 
         model.save(full_filepath)
         logger.info(f"Trained model saved to {full_filepath}.")

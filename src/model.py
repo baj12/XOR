@@ -1,7 +1,8 @@
 # model.py
 
-import datetime
 import logging
+import os
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -46,7 +47,7 @@ class CustomDebugCallback(tf.keras.callbacks.Callback):
 
 
 def build_and_train_model(initial_weights, df: pd.DataFrame,
-                          config: Config,
+                          config: Config, X_train, X_val, y_train, y_val,
                           test_size: float = 0.2,
                           random_state: int = 42,
                           model_save_path: str = 'models/best_model.h5',
@@ -96,7 +97,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     Path(plot_accuracy_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Build and configure model with debug info
-    model = build_model(config=Config())
+    model = build_model(config)
     logger.debug(f"Model summary:\n{model.get_config()}")
 
     # Add debug callbacks
@@ -141,7 +142,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
                   loss='binary_crossentropy', metrics=['accuracy'])
 
     # Setup TensorBoard and Callbacks
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir_final = f"logs/fit/{timestamp}"
     tensorboard_callback = TensorBoard(log_dir=log_dir_final, histogram_freq=1)
     early_stop_final = EarlyStopping(
@@ -192,6 +193,9 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     plt.savefig(plot_loss_path)
     plt.close()
     logger.info(f"Loss plot saved to {plot_loss_path}")
+
+    # Return the trained model
+    return model
 
 
 def build_model(config: Config) -> Sequential:

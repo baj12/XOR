@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 
 from genetic_algorithm import GeneticAlgorithm
 from model import build_and_train_model
+from plotRawData import plot_data_with_decision_boundary
 from utils import (load_config, load_results, plot_results, save_results,
                    validate_file)
 
@@ -109,7 +110,8 @@ def main():
 
     # Build and train the model using the best individual's weights
     try:
-        build_and_train_model(best_individual, df)
+        model = build_and_train_model(best_individual, df, config,
+                                      X_train, X_val, y_train, y_val)
         print("\nModel training completed successfully.")
     except Exception as e:
         print(f"Error during model training: {e}")
@@ -121,6 +123,13 @@ def main():
         print("Results plot saved successfully.")
     except Exception as e:
         print(f"Error during plotting results: {e}")
+
+    try:
+        plot_data_with_decision_boundary(
+            df_train, df_test, model, save_path='plots/final_evaluation.png')
+    except Exception as e:
+        print(f"Error during model training: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
