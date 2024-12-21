@@ -114,6 +114,9 @@ def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_te
     - y_test (np.ndarray): Testing labels.
     - save_path (str): Path to save the plot (determines format based on file extension).
     """
+
+    colormap = 'plasma'
+
     # Set plot style
     try:
         plt.style.use('ggplot')
@@ -155,7 +158,7 @@ def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_te
             correct_data[:, 0],
             correct_data[:, 1],
             c=correct_labels,
-            cmap='viridis',
+            cmap=colormap,
             marker=markers[True],
             alpha=0.7,
             edgecolors='w',
@@ -168,7 +171,7 @@ def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_te
             misclassified_data[:, 0],
             misclassified_data[:, 1],
             c=misclassified_labels,
-            cmap='viridis',
+            cmap=colormap,
             marker=markers[False],
             alpha=0.7,
             edgecolors='k',
@@ -188,7 +191,7 @@ def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_te
         Z = (Z > 0.5).astype(int).reshape(xx.shape)
 
         # Plot decision boundary
-        ax.contourf(xx, yy, Z, alpha=0.2, cmap='coolwarm')
+        ax.contourf(xx, yy, Z, alpha=0.2, cmap=colormap)
 
         # Set labels and title
         ax.set_xlabel('x')
