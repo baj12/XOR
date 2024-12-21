@@ -73,7 +73,7 @@ def main():
             sys.exit(1)
 
         # Split data into training and validation sets
-        X_train, X_val, y_train, y_val = train_test_split(
+        X_train, X_test, Y_train, Y_test = train_test_split(
             df[['x', 'y']].values,
             df['label'].values,
             test_size=0.2,
@@ -83,7 +83,7 @@ def main():
 
         # Initialize and run Genetic Algorithm
         try:
-            ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
+            ga = GeneticAlgorithm(config, X_train, X_test, Y_train, Y_test)
             best_individual, logbook = ga.run()
             print("Genetic Algorithm executed successfully.")
             # best_individual = hall_of_fame[0]
@@ -93,7 +93,8 @@ def main():
 
         except Exception as e:
             print(
-                f"Error during Genetic Algorithm execution: {e}", exc_info=True)
+                f"Error during Genetic Algorithm execution: {e}",
+                exc_info=True)
             sys.exit(1)
         # Optionally save results
         if args.save:
@@ -109,7 +110,7 @@ def main():
     try:
         current_date = datetime.now().strftime("%Y-%m-%d")
         model = build_and_train_model(best_individual, df, config,
-                                      X_train, X_val, y_train, y_val,
+                                      X_train, X_test, Y_train, Y_test,
                                       model_save_path=f"models/final_model_{current_date}.keras",
                                       plot_accuracy_path=f"plots/final_accuracy_{current_date}.png",
                                       plot_loss_path=f"plots/final_loss_{current_date}.png")
@@ -125,12 +126,13 @@ def main():
     except Exception as e:
         print(f"Error during plotting results: {e}")
 
-    # try:
-    #     plot_data_with_decision_boundary(
-    #         df_train, df_test, model, save_path='plots/final_evaluation.png')
-    # except Exception as e:
-    #     print(f"Error during model training: {e}")
-    #     sys.exit(1)
+    try:
+        plot_train_test_with_decision_boundary(model, X_train, X_test,
+                                               Y_train, Y_test,
+                                               save_path=f"plots/train_test_decision_boundary_{current_date}.png")
+    except Exception as e:
+        print(f"Error during model training: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
