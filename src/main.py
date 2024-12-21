@@ -2,12 +2,12 @@
 
 import argparse
 import sys
+from datetime import datetime
 
 from sklearn.model_selection import train_test_split
 
 from genetic_algorithm import GeneticAlgorithm
 from model import build_and_train_model
-from plotRawData import plot_data_with_decision_boundary
 from utils import (load_config, load_results, plot_results, save_results,
                    validate_file)
 
@@ -86,8 +86,14 @@ def main():
             ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
             best_individual, logbook = ga.run()
             print("Genetic Algorithm executed successfully.")
+            # best_individual = hall_of_fame[0]
+            print("\nBest Individual (Initial Weights):")
+            print(best_individual)
+            print(f"Fitness: {best_individual.fitness.values}")
+
         except Exception as e:
-            print(f"Error during Genetic Algorithm execution: {e}")
+            print(
+                f"Error during Genetic Algorithm execution: {e}", exc_info=True)
             sys.exit(1)
         # Optionally save results
         if args.save:
@@ -99,19 +105,14 @@ def main():
             except Exception as e:
                 print(f"Error saving results: {e}")
 
-    # Display the best individual
-    try:
-        # best_individual = hall_of_fame[0]
-        print("\nBest Individual (Initial Weights):")
-        print(best_individual)
-        print(f"Fitness: {best_individual.fitness.values}")
-    except Exception as e:
-        print(f"Error displaying best individual: {e}")
-
     # Build and train the model using the best individual's weights
     try:
+        current_date = datetime.now().strftime("%Y-%m-%d")
         model = build_and_train_model(best_individual, df, config,
-                                      X_train, X_val, y_train, y_val)
+                                      X_train, X_val, y_train, y_val,
+                                      model_save_path=f"models/final_model_{current_date}.keras",
+                                      plot_accuracy_path=f"plots/final_accuracy_{current_date}.png",
+                                      plot_loss_path=f"plots/final_loss_{current_date}.png")
         print("\nModel training completed successfully.")
     except Exception as e:
         print(f"Error during model training: {e}")
@@ -124,12 +125,12 @@ def main():
     except Exception as e:
         print(f"Error during plotting results: {e}")
 
-    try:
-        plot_data_with_decision_boundary(
-            df_train, df_test, model, save_path='plots/final_evaluation.png')
-    except Exception as e:
-        print(f"Error during model training: {e}")
-        sys.exit(1)
+    # try:
+    #     plot_data_with_decision_boundary(
+    #         df_train, df_test, model, save_path='plots/final_evaluation.png')
+    # except Exception as e:
+    #     print(f"Error during model training: {e}")
+    #     sys.exit(1)
 
 
 if __name__ == "__main__":

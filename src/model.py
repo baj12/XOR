@@ -20,13 +20,15 @@ from utils import Config
 # Setup logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s: ',
     handlers=[
         logging.FileHandler('debug.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+# Suppress DEBUG messages from matplotlib.font_manager
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 
 class CustomDebugCallback(tf.keras.callbacks.Callback):
@@ -50,7 +52,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
                           config: Config, X_train, X_val, y_train, y_val,
                           test_size: float = 0.2,
                           random_state: int = 42,
-                          model_save_path: str = 'models/best_model.h5',
+                          model_save_path: str = 'models/best_model.keras',
                           plot_accuracy_path: str = 'plots/best_model_accuracy.png',
                           plot_loss_path: str = 'plots/best_model_loss.png'):
     """
@@ -67,30 +69,31 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     - plot_loss_path (str): Filepath to save the loss plot. (default: 'plots/best_model_loss.png')
     """
     # Debug data information
-    logger.debug(f"DataFrame shape: {df.shape}")
-    logger.debug(f"DataFrame columns: {df.columns.tolist()}")
-    logger.debug(f"DataFrame head:\n{df.head()}")
+    pid = os.getpid()
+    logger.debug(f"{pid} DataFrame shape: {df.shape}")
+    logger.debug(f"{pid} DataFrame columns: {df.columns.tolist()}")
+    logger.debug(f"{pid} DataFrame head:\n{df.head()}")
 
     # Validate input data
     if df.empty:
-        logger.error("Empty DataFrame provided")
+        logger.error(f"{pid} Empty DataFrame provided")
         raise ValueError("Empty DataFrame")
 
     if not all(col in df.columns for col in ['x', 'y', 'label']):
-        logger.error("Missing required columns")
+        logger.error(f"{pid} Missing required columns")
         raise ValueError("DataFrame must contain 'x', 'y', 'label' columns")
 
     # Debug initial weights
-    logger.debug(f"Initial weights length: {len(initial_weights)}")
+    logger.debug(f"{pid} Initial weights length: {len(initial_weights)}")
     logger.debug(
-        f"Initial weights range: [{min(initial_weights)}, {max(initial_weights)}]")
+        f"{pid} Initial weights range: [{min(initial_weights)}, {max(initial_weights)}]")
 
     # Split the data into features and labels
     X = df[['x', 'y']].values
     y = df['label'].values
 
-    logger.debug(f"Features shape: {X.shape}")
-    logger.debug(f"Labels shape: {y.shape}")
+    logger.debug(f"{pid} Features shape: {X.shape}")
+    logger.debug(f"{pid} Labels shape: {y.shape}")
 
     # Create output directories
     Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +101,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
 
     # Build and configure model with debug info
     model = build_model(config)
-    logger.debug(f"Model summary:\n{model.get_config()}")
+    logger.debug(f"{pid} Model summary:\n{model.get_config()}")
 
     # Add debug callbacks
     callbacks = [
@@ -164,11 +167,10 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
         callbacks=[tensorboard_callback, early_stop_final, reduce_lr_final],
         verbose=1
     )
-    logger.debug("Model training completed")
+    logger.debug(f"{pid} Model training completed")
 
-    # Save the trained model
     model.save(model_save_path)
-    logger.info(f"Model saved to {model_save_path}")
+    logger.info(f"{pid} Model saved to {model_save_path}")
 
     # Plot training & validation accuracy values
     plt.figure()
@@ -180,7 +182,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     plt.legend(loc='lower right')
     plt.savefig(plot_accuracy_path)
     plt.close()
-    logger.info(f"Accuracy plot saved to {plot_accuracy_path}")
+    logger.info(f"{pid} Accuracy plot saved to {plot_accuracy_path}")
 
     # Plot training & validation loss values
     plt.figure()
@@ -192,10 +194,33 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     plt.legend(loc='upper right')
     plt.savefig(plot_loss_path)
     plt.close()
-    logger.info(f"Loss plot saved to {plot_loss_path}")
+    logger.info(f"{pid} Loss plot saved to {plot_loss_path}")
 
     # Return the trained model
     return model
+
+
+def evaluate_model(model, X_test, y_test):
+    """
+    Evaluates the model using various metrics.
+
+    Args:
+        model: Trained model.
+        X_test: Test features.
+        y_test: True labels.
+
+    Returns:
+        dict: Dictionary containing evaluation metrics.
+    """
+    y_pred = model.predict(X_test)
+    metrics = {
+        'accuracy': accuracy_score(y_test, y_pred),
+        'precision': precision_score(y_test, y_pred, average='binary'),
+        'recall': recall_score(y_test, y_pred, average='binary'),
+        'f1_score': f1_score(y_test, y_pred, average='binary'),
+        'confusion_matrix': confusion_matrix(y_test, y_pred)
+    }
+    return metrics
 
 
 def build_model(config: Config) -> Sequential:

@@ -1,8 +1,9 @@
 # genetic_algorithm.py
 
+import json
 import logging
 import multiprocessing as mp
-import os
+import os  # Add this import
 import random
 import uuid
 from contextlib import contextmanager
@@ -24,9 +25,14 @@ from utils import Config
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - [PID %(process)d] - %(name)s - %(levelname)s - %(message)s [%(filename)s:%(lineno)d]',
+    handlers=[
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
+# Suppress DEBUG messages from matplotlib.font_manager
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 
 @contextmanager
@@ -62,6 +68,7 @@ class GeneticAlgorithm:
         self.setup_deap()
         self.pool = mp.Pool(processes=self.config.ga.n_processes)
         self.toolbox.register("map", self.pool.map)
+        self.fitness_history = []  # To store fitness of all individuals per generation
 
     def calculate_total_weights(self) -> int:
         """
@@ -104,6 +111,14 @@ class GeneticAlgorithm:
                               mu=0, sigma=1, indpb=0.1)
         self.toolbox.register("select", tools.selTournament, tournsize=3)
 
+    def record_fitness(self, population, generation):
+        logger.debug(f"Recording fitness for generation {generation}.")
+        generation_fitness = [ind.fitness.values[0] for ind in population]
+        self.fitness_history.append({
+            'generation': generation,
+            'fitness': generation_fitness
+        })
+
     def run(self):
         """
         Execute the Genetic Algorithm.
@@ -129,18 +144,34 @@ class GeneticAlgorithm:
 
         with managed_pool(processes=self.config.ga.n_processes) as pool:
             self.toolbox.register("map", pool.map)
-            logger.info("Starting Genetic Algorithm execution.")
-            pop, logbook = algorithms.eaSimple(
-                population=pop,
-                toolbox=self.toolbox,
-                cxpb=self.config.ga.cxpb,
-                mutpb=self.config.ga.mutpb,
-                ngen=self.config.ga.ngen,
-                stats=stats,
-                halloffame=hof,
-                verbose=True
-            )
-            logger.info("Genetic Algorithm execution completed.")
+            pid = os.getpid()
+            logger.debug(
+                f"Starting Genetic Algorithm execution. process {pid}")
+            for gen in range(1, self.config.ga.ngen + 1):
+                logger.debug(f"Generation {gen} started.")
+                pop, logbook = algorithms.eaSimple(
+                    population=pop,
+                    toolbox=self.toolbox,
+                    cxpb=self.config.ga.cxpb,
+                    mutpb=self.config.ga.mutpb,
+                    ngen=1,
+                    stats=stats,
+                    halloffame=hof,
+                    verbose=True
+                )
+                self.record_fitness(pop, gen)
+                logger.info(
+                    f"Generation {gen} completed process {pid}.")
+            logger.info(
+                f"Genetic Algorithm execution completed. process {pid}")
+
+        current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        fitness_filename = f'fitness_history_{current_date}.json'
+        fitness_filepath = os.path.join("results", fitness_filename)
+
+        # Save fitness history to a JSON file in the results directory
+        with open(fitness_filepath, 'w') as f:
+            json.dump(self.fitness_history, f)
 
         # Retrieve the best individual from Hall of Fame
         best_individual = hof[0] if hof else None
@@ -165,7 +196,8 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     Returns:
     - fitness (tuple): Validation accuracy as a tuple.
     """
-    logger.info("Starting evaluation of individual.")
+    pid = os.getpid()
+    logger.info(f"{pid} Starting evaluation of individual.")
     try:
         # Build the model
         model = build_model(config)
@@ -181,13 +213,15 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             weight_tuples.append(weights)
             idx += size
         model.set_weights(weight_tuples)
-        logger.debug("Initial weights set successfully.")
+
+        logger.debug(f"{pid} Initial weights set successfully.")
 
         # Compile the model to reset optimizer state
         optimizer = get_optimizer(config.model.optimizer, config.model.lr)
         model.compile(optimizer=optimizer,
                       loss='binary_crossentropy', metrics=['accuracy'])
-        logger.debug("Model compiled successfully after setting weights.")
+        logger.debug(
+            f"{pid} Model compiled successfully after setting weights.")
 
         # Train the model
         history = model.fit(
@@ -197,7 +231,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             validation_data=(X_val, y_val),
             verbose=0
         )
-        logger.debug("Model training completed.")
+        logger.debug(f"{pid} Model training completed.")
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -206,14 +240,15 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             filepath, f'ga_results_{timestamp}_{unique_id}.keras')
 
         model.save(full_filepath)
-        logger.info(f"Trained model saved to {full_filepath}.")
+        logger.info(f"{pid} Trained model saved to {full_filepath}.")
 
         # Evaluate the model
         val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
-        logger.debug(f"Validation Accuracy: {val_accuracy}")
+        logger.debug(f"{pid} Validation Accuracy: {val_accuracy}")
 
         return (val_accuracy,)
 
     except Exception as e:
-        logger.error(f"Error during individual evaluation: {e}", exc_info=True)
+        logger.error(
+            f"{pid} Error during individual evaluation: {e}", exc_info=True)
         return (0.0,)
