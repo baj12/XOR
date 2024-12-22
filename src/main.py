@@ -1,6 +1,7 @@
 # main.py
 
 import argparse
+import logging
 import multiprocessing
 import sys
 from datetime import datetime
@@ -12,6 +13,17 @@ from model import build_and_train_model
 from plotRawData import plot_train_test_with_decision_boundary
 from utils import (load_config, load_results, plot_results, save_results,
                    validate_file)
+
+logging.basicConfig(
+    level=logging.DEBUG,  # Set to DEBUG to capture all levels of log messages
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler()  # Logs will be printed to the console
+    ]
+)
+logger = logging.getLogger(__name__)
+# Suppress DEBUG messages from matplotlib.font_manager
+logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 
 def parse_arguments():
@@ -62,17 +74,18 @@ def main():
             data = load_results(args.load)
             best_individual = data['best_individual']
             logbook = data['logbook']
-            print("Loaded previous GA results successfully.")
+            logger.debug("Loaded previous GA results successfully.")
         except Exception as e:
-            print(f"Error loading previous results: {e}")
+            logger.error(f"Error loading previous results: {e}")
             sys.exit(1)
     else:
         try:
             # Validate the input file
             df = validate_file(filepath)
-            print(f"Successfully validated the input file: '{filepath}'")
+            logger.debug(
+                f"Successfully validated the input file: '{filepath}'")
         except ValueError as ve:
-            print(f"Validation Error: {ve}")
+            logger.error(f"Validation Error: {ve}")
             sys.exit(1)
 
         # Split data into training and validation sets
@@ -88,14 +101,14 @@ def main():
         try:
             ga = GeneticAlgorithm(config, X_train, X_test, Y_train, Y_test)
             best_individual, logbook = ga.run()
-            print("Genetic Algorithm executed successfully.")
+            logger.debug("Genetic Algorithm executed successfully.")
             # best_individual = hall_of_fame[0]
-            print("\nBest Individual (Initial Weights):")
-            print(best_individual)
-            print(f"Fitness: {best_individual.fitness.values}")
+            logger.debug("\nBest Individual (Initial Weights):")
+            logger.debug(best_individual)
+            logger.debug(f"Fitness: {best_individual.fitness.values}")
 
         except Exception as e:
-            print(
+            logging.error(
                 f"Error during Genetic Algorithm execution: {e}",
                 exc_info=True)
             sys.exit(1)
@@ -103,11 +116,11 @@ def main():
         if args.save:
             try:
                 # best_individual = logbook.select("best")[0]
-                print(f"saving results: ")
+                logger.debug(f"saving results: ")
                 save_results(best_individual, logbook)
-                print("Results saved successfully.")
+                logger.debug("Results saved successfully.")
             except Exception as e:
-                print(f"Error saving results: {e}")
+                logger.error(f"Error saving results: {e}")
 
     # Build and train the model using the best individual's weights
     try:
@@ -117,25 +130,25 @@ def main():
                                       model_save_path=f"models/final_model_{current_date}.keras",
                                       plot_accuracy_path=f"plots/final_accuracy_{current_date}.png",
                                       plot_loss_path=f"plots/final_loss_{current_date}.png")
-        print("\nModel training completed successfully.")
+        logger.debug("\nModel training completed successfully.")
     except Exception as e:
-        print(f"Error during model training: {e}")
+        logger.error(f"Error during model training: {e}")
         sys.exit(1)
 
     # Plot and save results
     try:
-        print("Begin plot logbook.")
+        logger.debug("Begin plot logbook.")
         plot_results(logbook)
-        print("Results plot saved successfully.")
+        logger.debug("Results plot saved successfully.")
     except Exception as e:
-        print(f"Error during plotting results: {e}")
+        logger.error(f"Error during plotting results: {e}")
 
     try:
         plot_train_test_with_decision_boundary(model, X_train, X_test,
                                                Y_train, Y_test,
                                                save_path=f"plots/train_test_decision_boundary_{current_date}.png")
     except Exception as e:
-        print(f"Error during model training: {e}")
+        logger.error(f"Error during model training: {e}")
         sys.exit(1)
 
 

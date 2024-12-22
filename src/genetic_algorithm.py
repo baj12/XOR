@@ -164,7 +164,7 @@ class GeneticAlgorithm:
                 )
                 self.record_fitness(pop, gen)
                 for record in logbook:
-                    record.gen = gen
+                    record['gen'] = gen
                 master_logbook.extend(logbook)
                 logger.info(
                     f"Generation {gen} completed process {pid}.")
