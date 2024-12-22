@@ -38,6 +38,38 @@ Run the main script with the path to the input CSV file containing `x`, `y`, and
 python src/main.py data/raw/xor_data.min1.csv
 ```
 
+### Clean Directories
+
+Clean and recreate the specified directories:
+
+```sh
+python src/cleanDirectories.py
+```
+
+### Plot Raw Data
+
+Plot data from CSV files in the `data/raw` directory:
+
+```sh
+python src/plotRawData.py
+```
+
+### Move Results
+
+Move files from specified directories to a destination directory under `savedResults`:
+
+```sh
+python src/moveResults.py <destination_name>
+```
+
+### Generate Plot
+
+Generate plots for training and testing data with decision boundaries:
+
+```sh
+python src/generate_plot.py --data_file <data_file> --model_file <model_file> --output_file <output_file>
+```
+
 ## Detailed Description
 
 ### Methods Used
@@ -49,6 +81,28 @@ python src/main.py data/raw/xor_data.min1.csv
 
 - **Genetic Algorithm:** Optimizes the initial weights of the neural network to improve training performance.
 - **Neural Network Training:** Uses the optimized weights to train the model and achieve better accuracy.
+
+### Genetic Algorithm (GA)
+
+The GA works by evolving a population of candidate solutions (individuals) over several generations. Each individual represents a set of initial weights for the neural network. The steps involved are:
+
+1. **Initialization:** Create an initial population of individuals with random weights.
+2. **Evaluation:** Evaluate the fitness of each individual by training the neural network with the corresponding weights and measuring its performance.
+3. **Selection:** Select individuals based on their fitness to create a mating pool.
+4. **Crossover:** Perform crossover (recombination) on pairs of individuals to create offspring.
+5. **Mutation:** Apply random mutations to the offspring to introduce variability.
+6. **Replacement:** Replace the old population with the new offspring.
+7. **Repeat:** Repeat the evaluation, selection, crossover, mutation, and replacement steps for a specified number of generations.
+
+### Neural Network
+
+The neural network used in this project is a simple feedforward neural network with the following structure:
+
+- **Input Layer:** Takes two input features (`x` and `y`).
+- **Hidden Layers:** Two hidden layers with configurable units and activation functions.
+- **Output Layer:** A single output unit with a sigmoid activation function for binary classification.
+
+The network is trained using the Adam optimizer and binary cross-entropy loss.
 
 ### Logging Levels
 

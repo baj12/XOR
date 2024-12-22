@@ -40,7 +40,8 @@ def configure_logging(log_level=None):
         level=numeric_level,
         format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s',
         handlers=[
-            logging.StreamHandler(sys.stdout)
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('debug.log', mode='a')  # Adds FileHandler
         ]
     )
 
