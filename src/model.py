@@ -63,6 +63,15 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     logger.debug(f"{pid} DataFrame columns: {df.columns.tolist()}")
     logger.debug(f"{pid} DataFrame head:\n{df.head()}")
 
+    # Determine verbose level based on logger level
+    log_level = logger.getEffectiveLevel()
+    if log_level <= logging.DEBUG:
+        verbose = 1
+    elif log_level <= logging.INFO:
+        verbose = 0
+    else:
+        verbose = 0
+
     # Validate input data
     if df.empty:
         logger.error(f"{pid} Empty DataFrame provided")
@@ -97,7 +106,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
         TensorBoard(log_dir='./logs', histogram_freq=1),
         EarlyStopping(monitor='val_loss', patience=10, verbose=1),
         ReduceLROnPlateau(monitor='val_loss', factor=0.2,
-                          patience=5, verbose=1),
+                          patience=5, verbose=verbose),
         CustomDebugCallback()  # Custom callback for detailed monitoring
     ]
 
@@ -154,7 +163,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
         batch_size=16,
         validation_data=(X_val, y_val),
         callbacks=[tensorboard_callback, early_stop_final, reduce_lr_final],
-        verbose=1
+        verbose=verbose
     )
     logger.debug(f"{pid} Model training completed")
 

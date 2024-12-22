@@ -147,7 +147,8 @@ def main():
             try:
                 # best_individual = logbook.select("best")[0]
                 logger.debug(f"saving results: ")
-                save_results(best_individual, logbook)
+
+                save_results(best_individual, logbook, filepath='results')
                 logger.debug("Results saved successfully.")
             except Exception as e:
                 logger.error(f"Error saving results: {e}")

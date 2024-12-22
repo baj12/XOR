@@ -154,11 +154,11 @@ def save_results(best_individual, logbook, filepath='results/ga_results.pkl'):
     - filepath (str): Path where the results will be saved.
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    unique_id = uuid.uuid4()
+    # unique_id = uuid.uuid4()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     full_filepath = os.path.join(
-        filepath, f'ga_results_{timestamp}_{unique_id}.pkl')
+        filepath, f'ga_results_best_{timestamp}.pkl')
 
     logger.debug(f"saving to {full_filepath}")
     with open(full_filepath, 'wb') as f:

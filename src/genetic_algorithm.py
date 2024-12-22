@@ -126,6 +126,15 @@ class GeneticAlgorithm:
         pop = self.toolbox.population(n=self.config.ga.population_size)
         hof = tools.HallOfFame(1)
 
+        # Determine verbose level based on logger level
+        log_level = logger.getEffectiveLevel()
+        if log_level <= logging.DEBUG:
+            verbose = True
+        elif log_level <= logging.INFO:
+            verbose = False
+        else:
+            verbose = False
+
         stats = tools.Statistics(lambda ind: ind.fitness.values)
         stats.register("avg", np.mean)
         stats.register("std", np.std)
@@ -150,7 +159,7 @@ class GeneticAlgorithm:
                     ngen=1,
                     stats=stats,
                     halloffame=hof,
-                    verbose=True
+                    verbose=verbose
                 )
                 self.record_fitness(pop, gen)
                 for record in logbook:
@@ -171,7 +180,7 @@ class GeneticAlgorithm:
 
         # Retrieve the best individual from Hall of Fame
         best_individual = hof[0] if hof else None
-        logger.debug(
+        logger.info(
             f"Best Individual: {best_individual}, Fitness: {best_individual.fitness.values if best_individual else 'N/A'}")
 
         return best_individual, master_logbook
@@ -193,6 +202,15 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     - fitness (tuple): Validation accuracy as a tuple.
     """
     pid = os.getpid()
+    # Determine verbose level based on logger level
+    log_level = logger.getEffectiveLevel()
+    if log_level <= logging.DEBUG:
+        verbose = 1
+    elif log_level <= logging.INFO:
+        verbose = 0
+    else:
+        verbose = 0
+
     logger.info(f"{pid} Starting evaluation of individual.")
     try:
         # Build the model
@@ -225,7 +243,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             epochs=10,
             batch_size=config.model.batch_size,
             validation_data=(X_val, y_val),
-            verbose=0
+            verbose=verbose
         )
         logger.debug(f"{pid} Model training completed.")
         filepath = "results"
