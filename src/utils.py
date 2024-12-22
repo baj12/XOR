@@ -1,3 +1,4 @@
+import logging
 import os
 import pickle
 import uuid
@@ -8,6 +9,8 @@ from typing import Any, Dict
 import matplotlib.pyplot as plt
 import pandas as pd
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -79,7 +82,7 @@ def plot_results(logbook):
     plot_filename = f"plots/fitness_over_generations_{timestamp}.png"
     plt.savefig(plot_filename)
     plt.close()  # Close the plot to prevent blocking
-    print(f"Plot saved to {plot_filename}")
+    logger.debug(f"Plot saved to {plot_filename}")
 
 
 def validate_file(filepath):
@@ -127,13 +130,13 @@ def validate_file(filepath):
         if not pd.api.types.is_integer_dtype(df['label']):
             raise ValueError("Column 'label' must contain integer values.")
         # Print summary information
-        print("\nDataset Summary:")
-        print(f"Total rows: {len(df)}")
-        print(f"Total columns: {len(df.columns)}")
-        print("\nColumn info:")
-        print(df.dtypes)
-        print("\nFirst 5 rows preview:")
-        print(df.head())
+        logger.info("\nDataset Summary:")
+        logger.info(f"Total rows: {len(df)}")
+        logger.info(f"Total columns: {len(df.columns)}")
+        logger.info("\nColumn info:")
+        logger.info(df.dtypes)
+        logger.debug("\nFirst 5 rows preview:")
+        logger.debug(df.head())
 
         return df
 
@@ -157,11 +160,11 @@ def save_results(best_individual, logbook, filepath='results/ga_results.pkl'):
     full_filepath = os.path.join(
         filepath, f'ga_results_{timestamp}_{unique_id}.pkl')
 
-    print(f"saving to {full_filepath}")
+    logger.debug(f"saving to {full_filepath}")
     with open(full_filepath, 'wb') as f:
         pickle.dump(
             {'best_individual': best_individual, 'logbook': logbook}, f)
-    print(f"Results saved to {full_filepath}")
+    logger.info(f"Results saved to {full_filepath}")
 
 
 def load_results(filepath='results/ga_results.pkl'):
@@ -178,5 +181,5 @@ def load_results(filepath='results/ga_results.pkl'):
         raise FileNotFoundError(f"No results found at {filepath}")
     with open(filepath, 'rb') as f:
         data = pickle.load(f)
-    print(f"Results loaded from {filepath}")
+    logger.debug(f"Results loaded from {filepath}")
     return data

@@ -17,18 +17,7 @@ from tensorflow.keras.optimizers import SGD, Adam, RMSprop
 
 from utils import Config
 
-# Setup logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s: ',
-    handlers=[
-        logging.FileHandler('debug.log'),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
-# Suppress DEBUG messages from matplotlib.font_manager
-logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 
 class CustomDebugCallback(tf.keras.callbacks.Callback):
@@ -135,7 +124,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
                 idx += bias_size
         model.set_weights(weight_tuples)
     except Exception as e:
-        print(f"Error setting initial weights: {e}")
+        logger.error(f"Error setting initial weights: {e}")
         return
 
     # Compile the model with a chosen optimizer

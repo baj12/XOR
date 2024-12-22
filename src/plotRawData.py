@@ -6,6 +6,7 @@
 # numerical data.
 
 
+import logging
 import os
 from datetime import datetime
 
@@ -17,19 +18,22 @@ from matplotlib.lines import Line2D
 from sklearn.metrics import accuracy_score
 from tensorflow.keras.models import load_model
 
+logger = logging.getLogger(__name__)
+
 
 def plot_data_from_directory(data_dir):
     try:
         plt.style.use('ggplot')  # Using 'ggplot' style instead of 'seaborn'
     except:
-        print("Warning: 'ggplot' style not available. Using default style.")
+        logger.error(
+            "Warning: 'ggplot' style not available. Using default style.")
 
     sns.set_palette("deep")
 
     files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
 
     if not files:
-        print(f"No CSV files found in {data_dir}")
+        logger.error(f"No CSV files found in {data_dir}")
         return
 
     fig, axes = plt.subplots(len(files), 1, figsize=(
@@ -42,7 +46,7 @@ def plot_data_from_directory(data_dir):
 
             # Ensure there are at least three columns
             if df.shape[1] < 3:
-                print(
+                logger.error(
                     f"File {file} does not have at least three columns. Skipping.")
                 continue
 
@@ -62,9 +66,10 @@ def plot_data_from_directory(data_dir):
             plt.savefig(f'plots/{file}_scatter.png',
                         dpi=300, bbox_inches='tight')
             plt.close()
-            print(f"Plot saved for {file} as 'plots/{file}_scatter.png'.")
+            logger.info(
+                f"Plot saved for {file} as 'plots/{file}_scatter.png'.")
         except Exception as e:
-            print(f"Error processing file {file}: {str(e)}")
+            logger.error(f"Error processing file {file}: {str(e)}")
 
 
 def plot_final_evaluation(df, predictions, save_path='plots/final_evaluation.png'):
@@ -79,7 +84,8 @@ def plot_final_evaluation(df, predictions, save_path='plots/final_evaluation.png
     try:
         plt.style.use('ggplot')
     except:
-        print("Warning: 'ggplot' style not available. Using default style.")
+        logger.error(
+            "Warning: 'ggplot' style not available. Using default style.")
 
     sns.set_palette("deep")
 
@@ -98,7 +104,7 @@ def plot_final_evaluation(df, predictions, save_path='plots/final_evaluation.png
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Final evaluation plot saved as '{save_path}'.")
+    logger.info(f"Final evaluation plot saved as '{save_path}'.")
 
 
 def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_test, save_path='plots/train_test_decision_boundary.png'):
@@ -121,7 +127,8 @@ def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_te
     try:
         plt.style.use('ggplot')
     except:
-        print("Warning: 'ggplot' style not available. Using default style.")
+        logger.error(
+            "Warning: 'ggplot' style not available. Using default style.")
     sns.set_palette("deep")
 
     # Create A4 landscape figure
@@ -230,7 +237,7 @@ def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_te
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(
+    logger.info(
         f"Train and Test plots with decision boundary saved as '{save_path}'.")
 
 
@@ -247,12 +254,12 @@ def plot_with_model_file(model_path, X_train, X_test, y_train, y_test, save_path
     - save_path (str): Path to save the PDF plot.
     """
     if not os.path.exists(model_path):
-        print(f"Model file '{model_path}' does not exist.")
+        logger.error(f"Model file '{model_path}' does not exist.")
         return
 
     # Load the Keras model
     model = load_model(model_path)
-    print(f"Model loaded from '{model_path}'.")
+    logger.info(f"Model loaded from '{model_path}'.")
 
     # Plot using the loaded model
     plot_train_test_with_decision_boundary(

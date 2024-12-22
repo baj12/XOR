@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import sys
 
@@ -6,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 from plotRawData import plot_with_model_file
+
+logger = logging.getLogger(__name__)
 
 
 def parse_arguments():
@@ -110,7 +113,7 @@ def main():
     try:
         X_train, X_test, y_train, y_test = split_data(
             df, test_size=test_size, random_state=random_state)
-        print(
+        logger.debug(
             f"Data split into training and testing sets with test size = {test_size}.")
     except Exception as e:
         print(f"Error splitting data: {e}")

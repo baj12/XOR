@@ -22,17 +22,7 @@ from tensorflow.keras.optimizers import SGD, Adam, RMSprop
 from model import build_model, get_optimizer
 from utils import Config
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - [PID %(process)d] - %(name)s - %(levelname)s - %(message)s [%(filename)s:%(lineno)d]',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
-# Suppress DEBUG messages from matplotlib.font_manager
-logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 
 
 @contextmanager
@@ -141,7 +131,7 @@ class GeneticAlgorithm:
         stats.register("std", np.std)
         stats.register("min", np.min)
         stats.register("max", np.max)
-        print(mp.get_start_method())
+        logger.debug(mp.get_start_method())
         master_logbook = tools.Logbook()
         # Define headers as per your stats
         master_logbook.header = ["gen", "avg", "std", "min", "max"]

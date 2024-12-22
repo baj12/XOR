@@ -3,6 +3,7 @@
 import argparse
 import logging
 import multiprocessing
+import os
 import sys
 from datetime import datetime
 
@@ -14,16 +15,34 @@ from plotRawData import plot_train_test_with_decision_boundary
 from utils import (load_config, load_results, plot_results, save_results,
                    validate_file)
 
-logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG to capture all levels of log messages
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler()  # Logs will be printed to the console
-    ]
-)
-logger = logging.getLogger(__name__)
-# Suppress DEBUG messages from matplotlib.font_manager
-logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+# logging.basicConfig(
+#     level=logging.DEBUG,  # Set to DEBUG to capture all levels of log messages
+#     format='%(asctime)s [%(levelname)s] %(message)s',
+#     handlers=[
+#         logging.StreamHandler()  # Logs will be printed to the console
+#     ]
+# )
+# logger = logging.getLogger(__name__)
+# # Suppress DEBUG messages from matplotlib.font_manager
+# logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
+
+
+def configure_logging(log_level=None):
+    if not log_level:
+        log_level = os.getenv('LOG_LEVEL', 'INFO')
+
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        print(f"Invalid log level: {log_level}")
+        sys.exit(1)
+
+    logging.basicConfig(
+        level=numeric_level,
+        format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
 
 
 def parse_arguments():
@@ -43,6 +62,14 @@ def parse_arguments():
     )
     parser.add_argument(
         '--load', type=str, help='Path to load previous GA results.'
+    )
+    # Define mutually exclusive logging levels
+    parser.add_argument(
+        '--log',
+        type=str,
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        default='INFO',
+        help='Logging level (DEBUG, INFO, WARNING, ERROR).'
     )
     return parser.parse_args()
 
@@ -64,6 +91,9 @@ def main():
     args = parse_arguments()
     filepath = args.filepath
     config = load_config('config/config.yaml')
+    # Configure logging based on the parsed arguments
+    configure_logging(args.log)
+    logger = logging.getLogger(__name__)
 
     # Access config values
     population_size = config.ga.population_size
