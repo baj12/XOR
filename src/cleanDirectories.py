@@ -12,5 +12,5 @@ def clean_directories(directories):
 
 
 if __name__ == "__main__":
-    dirs_to_clean = ['logs', 'results', 'models', 'logs/fit']
+    dirs_to_clean = ['logs', 'results', 'models', 'logs/fit', 'plots']
     clean_directories(dirs_to_clean)

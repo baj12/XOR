@@ -124,6 +124,7 @@ def main():
 
     # Plot and save results
     try:
+        print("Begin plot logbook.")
         plot_results(logbook)
         print("Results plot saved successfully.")
     except Exception as e:

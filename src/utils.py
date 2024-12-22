@@ -76,8 +76,10 @@ def plot_results(logbook):
     plt.ylabel('Fitness')
     plt.legend(loc='lower right')
     plt.grid(True)
-    plt.savefig(f"plots/xor3_decision_boundary_{timestamp}.png")
-    plt.show()
+    plot_filename = f"plots/fitness_over_generations_{timestamp}.png"
+    plt.savefig(plot_filename)
+    plt.close()  # Close the plot to prevent blocking
+    print(f"Plot saved to {plot_filename}")
 
 
 def validate_file(filepath):

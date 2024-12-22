@@ -142,6 +142,9 @@ class GeneticAlgorithm:
         stats.register("min", np.min)
         stats.register("max", np.max)
         print(mp.get_start_method())
+        master_logbook = tools.Logbook()
+        # Define headers as per your stats
+        master_logbook.header = ["gen", "avg", "std", "min", "max"]
         with managed_pool(processes=self.config.ga.n_processes) as pool:
             self.toolbox.register("map", pool.map)
             pid = os.getpid()
@@ -160,6 +163,9 @@ class GeneticAlgorithm:
                     verbose=True
                 )
                 self.record_fitness(pop, gen)
+                for record in logbook:
+                    record.gen = gen
+                master_logbook.extend(logbook)
                 logger.info(
                     f"Generation {gen} completed process {pid}.")
             logger.info(
@@ -178,7 +184,7 @@ class GeneticAlgorithm:
         logger.debug(
             f"Best Individual: {best_individual}, Fitness: {best_individual.fitness.values if best_individual else 'N/A'}")
 
-        return best_individual, logbook
+        return best_individual, master_logbook
 
 
 def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
