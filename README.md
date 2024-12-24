@@ -177,4 +177,7 @@ These plots are saved in the `plots` directory with timestamps.
 
 - rotate input data to see if this helps to get perfect separations
 
-- 
+- use xor problem to evaluate how many generations and individuals one needs depending on complexity of network. i.e. vary the number generations and individuals for a given network complexity, 2,1; 2,2; 16, 16; 32, 32; 64,64; 128,128; 512,512
+
+
+

@@ -38,3 +38,6 @@ data/raw/
 results/
 models/
 savedResults/
+mem*.txt
+mylog.txt
+mem*.png

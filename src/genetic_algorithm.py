@@ -1,12 +1,15 @@
 # genetic_algorithm.py
 
+import gc
 import json
 import logging
 import multiprocessing as mp
 import os  # Add this import
 import random
+import signal
 import sys
 import uuid
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
@@ -30,7 +33,19 @@ from utils import Config
 # tf.config.threading.set_intra_op_parallelism_threads(2)
 # tf.config.threading.set_inter_op_parallelism_threads(2)
 
+
+def handler(signum, frame):
+    raise TimeoutError("GA execution timed out!")
+
+
+signal.signal(signal.SIGALRM, handler)
+signal.alarm(3600)
+
+
 logger = logging.getLogger(__name__)
+
+# Initialize a global counter
+fitness_counter = 0
 
 
 @contextmanager
@@ -64,7 +79,6 @@ def init_worker_logging():
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 
-@profile
 class GeneticAlgorithm:
     def __init__(self, config: Config, X_train, X_val, y_train, y_val):
         """
@@ -88,6 +102,7 @@ class GeneticAlgorithm:
         self.pool = mp.Pool(processes=self.config.ga.n_processes)
         self.toolbox.register("map", self.pool.map)
         self.fitness_history = []  # To store fitness of all individuals per generation
+        self.counters = defaultdict(int)
 
     def calculate_total_weights(self) -> int:
         """
@@ -130,8 +145,19 @@ class GeneticAlgorithm:
                               mu=0, sigma=1, indpb=0.1)
         self.toolbox.register("select", tools.selTournament, tournsize=3)
 
-    def record_fitness(self, population, generation):
-        logger.debug(f"Recording fitness for generation {generation}.")
+    def record_fitness(self, population, generation, filename_base='fitness', batch=10):
+        logger = logging.getLogger()
+        logger.debug(f"Recording fitness started {generation}.")
+
+        pid = os.getpid()
+        filename = f"{filename_base}_{pid}.log"
+
+        # Increment the counter for the current PID
+        self.counters[pid] += 1
+        current_count = self.counters[pid]
+        logger.debug(
+            f"Process {pid}: record_fitness counter = {current_count}.")
+
         generation_fitness = [ind.fitness.values[0] for ind in population]
         self.fitness_history.append({
             'generation': generation,
@@ -139,6 +165,24 @@ class GeneticAlgorithm:
         })
         logger.info(
             f"size of self.fitness_history: {asizeof.asizeof(self.fitness_history)} bytes")
+        if self.counters[pid] % batch == 0:
+            try:
+                log_directory = '/Users/bernd/python/XOR/logs/'
+                os.makedirs(log_directory, exist_ok=True)
+                filepath = os.path.join(log_directory, filename)
+
+                with open(filename, 'a') as f:
+                    f.write(f"{self.fitness_history}\n")
+                logging.debug(
+                    f"Process {pid}: Appended fitness: {self.fitness_history} to {filename}")
+                # Clear the fitness_history after saving to file
+                self.fitness_history.clear()
+                logging.debug(
+                    f"Process {pid}: Cleared fitness_history after saving.")
+
+            except Exception as e:
+                logging.error(
+                    f"Process {pid}: Failed to write to {filename}: {e}")
 
     def run(self):
         """
@@ -193,6 +237,7 @@ class GeneticAlgorithm:
                     halloffame=hof,
                     verbose=verbose
                 )
+                logger.debug(f"self.record_fitness {gen} starting.")
                 self.record_fitness(pop, gen)
                 for record in logbook:
                     record['gen'] = gen
@@ -301,6 +346,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         logger.debug(f"{pid} Validation Accuracy: {val_accuracy}")
         tf.keras.backend.clear_session()
         del model
+        gc.collect()
 
         return (val_accuracy,)
 
