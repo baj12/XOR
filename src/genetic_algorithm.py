@@ -5,6 +5,7 @@ import logging
 import multiprocessing as mp
 import os  # Add this import
 import random
+import sys
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -13,7 +14,11 @@ from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np  # Added for handling weights
 import pandas as pd
+import tensorflow as tf
 from deap import algorithms, base, creator, tools
+from memory_profiler import memory_usage, profile
+from pympler import asizeof
+from tensorflow.keras.backend import clear_session
 # from sklearn.model_selection import train_test_split
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Sequential  # Added for model manipulation
@@ -22,13 +27,16 @@ from tensorflow.keras.optimizers import SGD, Adam, RMSprop
 from model import build_model, get_optimizer
 from utils import Config
 
+# tf.config.threading.set_intra_op_parallelism_threads(2)
+# tf.config.threading.set_inter_op_parallelism_threads(2)
+
 logger = logging.getLogger(__name__)
 
 
 @contextmanager
 def managed_pool(processes):
     """Context manager for proper pool cleanup"""
-    pool = mp.Pool(processes=processes)
+    pool = mp.Pool(processes=processes, initializer=init_worker_logging)
     try:
         yield pool
     finally:
@@ -36,6 +44,27 @@ def managed_pool(processes):
         pool.join()
 
 
+def init_worker_logging():
+    """
+    Initializes logging for each worker process.
+    """
+    import logging
+    import sys
+
+    # Configure logging for the worker
+    logging.basicConfig(
+        level=logging.DEBUG,  # Set to DEBUG to capture all debug messages
+        format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('debug.log', mode='a')
+        ]
+    )
+    # Suppress DEBUG logs from specific third-party libraries if needed
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
+
+@profile
 class GeneticAlgorithm:
     def __init__(self, config: Config, X_train, X_val, y_train, y_val):
         """
@@ -108,6 +137,8 @@ class GeneticAlgorithm:
             'generation': generation,
             'fitness': generation_fitness
         })
+        logger.info(
+            f"size of self.fitness_history: {asizeof.asizeof(self.fitness_history)} bytes")
 
     def run(self):
         """
@@ -129,7 +160,7 @@ class GeneticAlgorithm:
         # Determine verbose level based on logger level
         log_level = logger.getEffectiveLevel()
         if log_level <= logging.DEBUG:
-            verbose = True
+            verbose = False
         elif log_level <= logging.INFO:
             verbose = False
         else:
@@ -151,6 +182,7 @@ class GeneticAlgorithm:
                 f"Starting Genetic Algorithm execution. process {pid}")
             for gen in range(1, self.config.ga.ngen + 1):
                 logger.debug(f"Generation {gen} started.")
+
                 pop, logbook = algorithms.eaSimple(
                     population=pop,
                     toolbox=self.toolbox,
@@ -165,10 +197,14 @@ class GeneticAlgorithm:
                 for record in logbook:
                     record['gen'] = gen
                 master_logbook.extend(logbook)
-                logger.info(
+                logger.debug(
+                    f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
+                logger.debug(
                     f"Generation {gen} completed process {pid}.")
-            logger.info(
+            logger.debug(
                 f"Genetic Algorithm execution completed. process {pid}")
+            logger.info(
+                f"size of self.fitness_history - 2: {asizeof.asizeof(self.fitness_history)} bytes")
 
         current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         fitness_filename = f'fitness_history_{current_date}.json'
@@ -186,6 +222,7 @@ class GeneticAlgorithm:
         return best_individual, master_logbook
 
 
+@profile
 def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
     """
     Evaluate an individual's fitness based on validation accuracy.
@@ -205,7 +242,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     # Determine verbose level based on logger level
     log_level = logger.getEffectiveLevel()
     if log_level <= logging.DEBUG:
-        verbose = 1
+        verbose = 0
     elif log_level <= logging.INFO:
         verbose = 0
     else:
@@ -245,13 +282,16 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             validation_data=(X_val, y_val),
             verbose=verbose
         )
+
+        logger.debug(
+            f"size of history: {asizeof.asizeof(history)} bytes")
         logger.debug(f"{pid} Model training completed.")
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4()
         full_filepath = os.path.join(
-            filepath, f'ga_results_{timestamp}_{unique_id}.keras')
+            filepath, f"ga_results_{timestamp}_{unique_id}.keras")
 
         model.save(full_filepath)
         logger.info(f"{pid} Trained model saved to {full_filepath}.")
@@ -259,6 +299,8 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         # Evaluate the model
         val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
         logger.debug(f"{pid} Validation Accuracy: {val_accuracy}")
+        tf.keras.backend.clear_session()
+        del model
 
         return (val_accuracy,)
 

@@ -28,13 +28,26 @@ from utils import (load_config, load_results, plot_results, save_results,
 
 
 def configure_logging(log_level=None):
+    import logging
+    import os
+    import sys
+
     if not log_level:
-        log_level = os.getenv('LOG_LEVEL', 'INFO')
+        log_level = os.getenv('LOG_LEVEL', 'DEBUG')
 
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
         print(f"Invalid log level: {log_level}")
         sys.exit(1)
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        print(f"Invalid log level: {log_level}")
+        sys.exit(1)
+
+    # Clear existing handlers to prevent duplicates
+    logger = logging.getLogger()
+    if logger.hasHandlers():
+        logger.handlers.clear()
 
     logging.basicConfig(
         level=numeric_level,
@@ -44,6 +57,15 @@ def configure_logging(log_level=None):
             logging.FileHandler('debug.log', mode='a')  # Adds FileHandler
         ]
     )
+    logger = logging.getLogger(__name__)
+    logger.debug("Logging configured successfully.")
+
+    # Suppress DEBUG logs from specific third-party libraries
+    libraries_to_suppress = ['matplotlib']
+    for lib in libraries_to_suppress:
+        logging.getLogger(lib).setLevel(logging.WARNING)
+
+    return logger
 
 
 def parse_arguments():
@@ -72,6 +94,7 @@ def parse_arguments():
         default='INFO',
         help='Logging level (DEBUG, INFO, WARNING, ERROR).'
     )
+    pass
     return parser.parse_args()
 
 
@@ -89,12 +112,17 @@ def main():
     7. Build and train the model using the best individual's weights.
     8. Plot and save the results.
     """
+    import argparse
+    import logging
+
+    from genetic_algorithm import GeneticAlgorithm, managed_pool
+
     args = parse_arguments()
     filepath = args.filepath
     config = load_config('config/config.yaml')
     # Configure logging based on the parsed arguments
-    configure_logging(args.log)
-    logger = logging.getLogger(__name__)
+    logger = configure_logging(args.log)
+    logger.debug("Starting main function.")
 
     # Access config values
     population_size = config.ga.population_size

@@ -169,3 +169,12 @@ The results of the genetic algorithm and model training are plotted and saved as
 These plots are saved in the `plots` directory with timestamps.
 
 
+## things still to do
+
+- allow more flexible network architectures
+
+- allow other input files
+
+- rotate input data to see if this helps to get perfect separations
+
+- 
