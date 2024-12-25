@@ -4,10 +4,11 @@ import gc
 import json
 import logging
 import multiprocessing as mp
-import os  # Add this import
+import os
 import random
 import signal
 import sys
+import traceback
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -33,9 +34,15 @@ from utils import Config
 # tf.config.threading.set_intra_op_parallelism_threads(2)
 # tf.config.threading.set_inter_op_parallelism_threads(2)
 
+# this disables GPU
+# tf.config.set_visible_devices([], 'GPU')
+
 
 def handler(signum, frame):
-    raise TimeoutError("GA execution timed out!")
+    location = f"File \"{frame.f_code.co_filename}\", line {frame.f_lineno}, in {frame.f_code.co_name}"
+    tb = ''.join(traceback.format_stack(frame))
+    error_message = f"GA execution timed out!\nLocation: {location}\nStack Trace:\n{tb}"
+    raise TimeoutError(error_message)
 
 
 signal.signal(signal.SIGALRM, handler)
@@ -302,6 +309,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         weight_shapes = [
             w.shape for layer in model.layers for w in layer.get_weights() if w.size > 0]
         weight_tuples = []
+
         idx = 0
         for shape in weight_shapes:
             size = np.prod(shape)
@@ -309,8 +317,6 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             weight_tuples.append(weights)
             idx += size
         model.set_weights(weight_tuples)
-
-        logger.debug(f"{pid} Initial weights set successfully.")
 
         # Compile the model to reset optimizer state
         optimizer = get_optimizer(config.model.optimizer, config.model.lr)
@@ -335,11 +341,12 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         os.makedirs(filepath, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4()
+
         full_filepath = os.path.join(
             filepath, f"ga_results_{timestamp}_{unique_id}.keras")
 
         model.save(full_filepath)
-        logger.info(f"{pid} Trained model saved to {full_filepath}.")
+        logger.debug(f"{pid} Trained model saved to {full_filepath}.")
 
         # Evaluate the model
         val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)

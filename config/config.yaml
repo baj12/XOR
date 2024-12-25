@@ -1,15 +1,15 @@
 # Genetic Algorithm Parameters
 ga:
-  population_size: 50
+  population_size: 20
   cxpb: 0.5
   mutpb: 0.2
-  ngen: 40
-  n_processes: 5
+  ngen: 50
+  n_processes: 1
 
 # Model Parameters
 model:
-  hl1: 1
-  hl2: 2
+  hl1: 2
+  hl2: 3
   activation: "relu"
   optimizer: "adam"
   lr: 0.001

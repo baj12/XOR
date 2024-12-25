@@ -2,6 +2,7 @@
 
 import logging
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -9,15 +10,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorflow.keras import Input
 from tensorflow.keras.callbacks import (EarlyStopping, ReduceLROnPlateau,
                                         TensorBoard)
-from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
+from tensorflow.keras.utils import plot_model
 
 from utils import Config
 
 logger = logging.getLogger(__name__)
+# tf.config.set_visible_devices([], 'GPU')
 
 
 class CustomDebugCallback(tf.keras.callbacks.Callback):
@@ -66,7 +70,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     # Determine verbose level based on logger level
     log_level = logger.getEffectiveLevel()
     if log_level <= logging.DEBUG:
-        verbose = 1
+        verbose = 0
     elif log_level <= logging.INFO:
         verbose = 0
     else:
@@ -221,6 +225,31 @@ def evaluate_model(model, X_test, y_test):
     return metrics
 
 
+def initialize_tensorflow():
+    """
+    Initialize TensorFlow to preload necessary components.
+    This can help prevent delays during the first model operation.
+    """
+    try:
+        logger.debug("Initializing TensorFlow...")
+        # Perform a simple TensorFlow operation
+        tf.constant(1)
+        logger.debug("TensorFlow initialized successfully.")
+    except Exception as e:
+        logger.error(f"TensorFlow initialization failed: {e}")
+        raise
+
+
+def validate_config(config):
+    assert isinstance(
+        config.model.hl1, int) and config.model.hl1 > 0, "hl1 must be a positive integer."
+    assert isinstance(
+        config.model.hl2, int) and config.model.hl2 > 0, "hl2 must be a positive integer."
+    valid_activations = ['relu', 'sigmoid', 'tanh', 'softmax', 'linear']
+    assert config.model.activation in valid_activations, f"Unsupported activation function: {config.model.activation}"
+    logger.debug("Configuration parameters validated successfully.")
+
+
 def build_model(config: Config) -> Sequential:
     """
     Builds and returns a Keras Sequential model using configuration parameters.
@@ -231,12 +260,28 @@ def build_model(config: Config) -> Sequential:
     Returns:
     - model (Sequential): Compiled Keras model.
     """
-    logger.debug("Starting build_model")
-    logger.debug(f"Model configuration: {config.model}")
+    pid = os.getpid()
+    current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    unique_id = uuid.uuid4()
 
-    model = Sequential()
+    # Disable GPU (for testing purposes)
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    logger.debug(f"{pid} GPU disabled for this process.")
+    initialize_tensorflow()
+
+    logger.debug(f"{pid} - Model configuration: {config.model}")
+
+    model = Sequential(name=f"model_{pid}_{current_date}_{unique_id}")
+    logger.debug(f"{pid} Sequential done.")
+
     model.add(Input(shape=(2,)))  # Input layer matching feature dimensions
+    logger.debug(f"{pid} add done.")
 
+    # Validate configuration parameters
+    validate_config(config)
+
+    logger.debug(
+        f"{pid} add 2 {config.model.hl1} - {config.model.activation}.")
     # Add first hidden layer
     model.add(Dense(
         units=config.model.hl1,
@@ -244,7 +289,7 @@ def build_model(config: Config) -> Sequential:
         name='hidden_layer_1'
     ))
     logger.debug(
-        f"Added hidden_layer_1 with {config.model.hl1} units and '{config.model.activation}' activation.")
+        f"{pid} Added hidden_layer_1 with {config.model.hl1} units and '{config.model.activation}' activation.")
 
     # Add second hidden layer
     model.add(Dense(
@@ -253,21 +298,37 @@ def build_model(config: Config) -> Sequential:
         name='hidden_layer_2'
     ))
     logger.debug(
-        f"Added hidden_layer_2 with {config.model.hl2} units and '{config.model.activation}' activation.")
+        f"{pid} Added hidden_layer_2 with {config.model.hl2} units and '{config.model.activation}' activation.")
 
     # Output layer for binary classification
     model.add(Dense(1, activation='sigmoid', name='output_layer'))
-    logger.debug("Added output_layer with 1 unit and 'sigmoid' activation.")
+    logger.debug(
+        f"{pid} Added output_layer with 1 unit and 'sigmoid' activation.")
 
     # Configure optimizer
     optimizer = get_optimizer(config.model.optimizer, config.model.lr)
     logger.debug(
-        f"Configured optimizer: {config.model.optimizer} with learning rate {config.model.lr}")
+        f"{pid} Configured optimizer: {config.model.optimizer} with learning rate {config.model.lr}")
 
     # Compile the model
     model.compile(optimizer=optimizer,
                   loss='binary_crossentropy', metrics=['accuracy'])
-    logger.debug("Model compiled successfully.")
+    logger.debug(f"{pid} Model compiled successfully.")
+    # Setup TensorBoard callback for profiling
+    log_dir = "logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    # Adjust batch numbers as needed
+    tensorboard_callback = TensorBoard(
+        log_dir=log_dir, profile_batch='500,520')
+
+    # # Visualize the model architecture
+    # try:
+    #     plot_model(model, to_file=f"plots/model_architecture.{pid}.{current_date}.{unique_id}.png",
+    #                show_shapes=True, show_layer_names=True)
+    #     logger.debug(
+    #         f"{pid} Model architecture saved to 'model_architecture.png'.")
+    # except Exception as e:
+    #     logger.error(f"{pid} Failed to plot model architecture: {e}")
+    #     raise
 
     return model
 

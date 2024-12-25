@@ -180,4 +180,9 @@ These plots are saved in the `plots` directory with timestamps.
 - use xor problem to evaluate how many generations and individuals one needs depending on complexity of network. i.e. vary the number generations and individuals for a given network complexity, 2,1; 2,2; 16, 16; 32, 32; 64,64; 128,128; 512,512
 
 
+there is still a problem with non-terminating individuals.
+
+check memory leak
+
+compare only CPU vs with GPU and see which one is faster by how much?
 
