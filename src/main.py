@@ -185,7 +185,7 @@ def main():
 
     # Build and train the model using the best individual's weights
     try:
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         model = build_and_train_model(best_individual, df, config,
                                       X_train, X_test, Y_train, Y_test,
                                       model_save_path=f"models/final_model_{current_date}.keras",

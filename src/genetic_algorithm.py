@@ -326,7 +326,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             f"{pid} Model compiled successfully after setting weights.")
 
         # Train the model
-        history = model.fit(
+        model.fit(
             X_train, y_train,
             epochs=10,
             batch_size=config.model.batch_size,
@@ -334,8 +334,8 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             verbose=verbose
         )
 
-        logger.debug(
-            f"size of history: {asizeof.asizeof(history)} bytes")
+        # logger.debug(
+        #     f"size of history: {asizeof.asizeof(history)} bytes")
         logger.debug(f"{pid} Model training completed.")
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)
