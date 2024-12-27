@@ -364,23 +364,31 @@ class GeneticAlgorithm:
                 # Compile and record statistics
                 record = stats.compile(pop)
                 master_logbook.record(gen=gen, **record)
+                logger.debug(f"Generation {gen} Statistics: {record}")
+                logger.debug(
+                    f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
+                logger.debug(
+                    f"size of hof: {asizeof.asizeof(hof)} bytes")
+                logger.debug(
+                    f"size of pop: {asizeof.asizeof(pop)} bytes")
 
-                gc.collect()
+                logger.debug(f"self.record_fitness {gen} starting.")
+                self.record_fitness(pop, gen)
+                # for record in master_logbook:
+                #     record['gen'] = gen
+                # master_logbook.extend(master_logbook)
+                logger.debug(
+                    f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
+                logger.debug(
+                    f"Generation {gen} completed process {pid}.")
+                logger.debug(
+                    f"Genetic Algorithm execution completed. process {pid}")
+                logger.info(
+                    f"size of self.fitness_history - 2: {asizeof.asizeof(self.fitness_history)} bytes")
 
-            logger.debug(f"self.record_fitness {gen} starting.")
-            self.record_fitness(pop, gen)
-            for record in master_logbook:
-                record['gen'] = gen
-            master_logbook.extend(master_logbook)
-            logger.debug(
-                f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
-            logger.debug(
-                f"Generation {gen} completed process {pid}.")
-            logger.debug(
-                f"Genetic Algorithm execution completed. process {pid}")
-            logger.info(
-                f"size of self.fitness_history - 2: {asizeof.asizeof(self.fitness_history)} bytes")
-
+        # After recording statistics
+        for entry in master_logbook:
+            print(entry)
         current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         fitness_filename = f'fitness_history_{current_date}.json'
         fitness_filepath = os.path.join("results", fitness_filename)
@@ -457,8 +465,6 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             verbose=verbose
         )
 
-        # logger.debug(
-        #     f"size of history: {asizeof.asizeof(history)} bytes")
         logger.debug(f"{pid} Model training completed.")
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)

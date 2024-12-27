@@ -20,6 +20,7 @@ class GAConfig:
     mutpb: float
     ngen: int
     n_processes: int
+    max_time_per_ind: float
 
 
 @dataclass

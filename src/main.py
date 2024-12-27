@@ -211,9 +211,11 @@ def main():
     except Exception as e:
         logger.error(f"Error during model training: {e}")
         sys.exit(1)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
     # chatGPT suggests using 'spawn' method for macOS to avoid issues with TensorFlow/Keras
+    # in the end future seems to be the best option
     multiprocessing.set_start_method("spawn")
     main()
