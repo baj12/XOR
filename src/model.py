@@ -266,7 +266,7 @@ def build_model(config: Config) -> Sequential:
 
     # Disable GPU (for testing purposes)
     # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-    logger.debug(f"{pid} GPU disabled for this process.")
+    # logger.debug(f"{pid} GPU disabled for this process.")
     initialize_tensorflow()
 
     logger.debug(f"{pid} - Model configuration: {config.model}")
