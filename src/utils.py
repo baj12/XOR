@@ -21,6 +21,7 @@ class GAConfig:
     ngen: int
     n_processes: int
     max_time_per_ind: float
+    epochs: int
 
 
 @dataclass
