@@ -318,7 +318,7 @@ class GeneticAlgorithm:
                     local_vars = locals()
                     for var_name, var_value in local_vars.items():
                         logger.debug(
-                            f" {count} -- {var_name} : {sys.getsizeof(var_value)} bytes")
+                            f" {count} -- Mysize of {var_name} : {sys.getsizeof(var_value)} bytes")
 
             except TimeoutError:
                 killed += 1
@@ -475,7 +475,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     # Determine verbose level based on logger level
     log_level = logger.getEffectiveLevel()
     if log_level <= logging.DEBUG:
-        verbose = 1
+        verbose = 0
     elif log_level <= logging.INFO:
         verbose = 0
     else:
@@ -509,7 +509,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         # Train the model
         model.fit(
             X_train, y_train,
-            epochs=confitg.ga.epochs,
+            epochs=config.ga.epochs,
             batch_size=config.model.batch_size,
             validation_data=(X_val, y_val),
             verbose=verbose
