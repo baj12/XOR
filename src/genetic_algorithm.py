@@ -1,9 +1,25 @@
 # genetic_algorithm.py
 
-# because of some bugs in M2/M3 apple silicon and metal
-# i had to play with paralleization. in the end multiprocessing with pools
+# because of some bugs in M2/M3 apple silicon and metal which cause at minimum
+# the macs with M3Pro and tensorflow-metal==1.1.0 to hang at various points.
+# i had to play with parallelization. in the end concurrent.futures does the trick.
+# Here we can implement a max wait time for an individual run (individual of the GA)
+# Of note, we train individual over 10 iterations, which mutation / etc is used?
 
-import concurrent.futures
+"""
+Genetic Algorithm Implementation for [Your Project Name]
+
+This script implements a Genetic Algorithm (GA) to optimize [describe what is being optimized, e.g., neural network architectures, parameters, etc.].
+The GA utilizes DEAP (Distributed Evolutionary Algorithms in Python) for evolutionary operations.
+
+Classes:
+    GeneticAlgorithm: Encapsulates the GA process, including initialization, evaluation, selection, crossover, and mutation.
+
+Functions:
+    evaluate_individual(individual, config, X_train, X_val, y_train, y_val):
+        Evaluates the fitness of an individual based on model performance.
+"""
+
 import gc
 import json
 import logging
@@ -44,12 +60,17 @@ from utils import Config
 
 
 def handler(signum, frame):
+    """
+    Signal handler to raise a TimeoutError when GA execution exceeds the allowed time.
+    """
+
     location = f"File \"{frame.f_code.co_filename}\", line {frame.f_lineno}, in {frame.f_code.co_name}"
     tb = ''.join(traceback.format_stack(frame))
     error_message = f"GA execution timed out!\nLocation: {location}\nStack Trace:\n{tb}"
     raise TimeoutError(error_message)
 
 
+# signal a time-out after 1 hour
 signal.signal(signal.SIGALRM, handler)
 # signal.alarm(3600)
 
@@ -60,19 +81,18 @@ logger = logging.getLogger(__name__)
 fitness_counter = 0
 
 
-# @contextmanager
-# def managed_pool(processes):
-#     """Context manager for proper pool cleanup"""
-#     pool = mp.Pool(processes=processes, initializer=init_worker_logging)
-#     try:
-#         yield pool
-#     finally:
-#         pool.close()
-#         pool.join()
-
-
 @contextmanager
 def managed_pool(max_workers):
+    """
+    Context manager to handle multiprocessing pool with proper initialization and cleanup.
+    used with futures to handle timeouts
+
+    Args:
+        processes (int): Number of worker processes.
+
+    Yields:
+        mp.Pool: A multiprocessing pool.
+    """
     executor = ProcessPoolExecutor(
         max_workers=max_workers, initializer=init_worker_logging)
     try:
@@ -102,6 +122,19 @@ def init_worker_logging():
 
 
 class GeneticAlgorithm:
+    """
+    Genetic Algorithm class to manage the evolutionary process.
+
+    Attributes:
+        config (dict): Configuration parameters from config.yaml.
+        X_train (np.ndarray): Training feature data.
+        X_val (np.ndarray): Validation feature data.
+        y_train (np.ndarray): Training labels.
+        y_val (np.ndarray): Validation labels.
+        toolbox (deap.Toolbox): DEAP toolbox with registered genetic operators.
+        fitness_history (dict): Records fitness statistics per generation.
+    """
+
     def __init__(self, config: Config, X_train, X_val, y_train, y_val):
         """
         Initialize the Genetic Algorithm with configuration and data.
@@ -214,12 +247,7 @@ class GeneticAlgorithm:
         - pop (list): Final population.
         - log (Logbook): Logbook containing statistics of the evolution.
         """
-       # Use functools.partial to pass necessary data to eval_individual
-        # eval_func = partial(eval_individual, config=self.config,
-        #                     X_train=self.X_train, X_val=self.X_val,
-        #                     y_train=self.y_train, y_val=self.y_val)
-        # self.toolbox.register("evaluate", eval_func)
-
+        # Initialize population and Hall of Fame
         pop = self.toolbox.population(n=self.config.ga.population_size)
         hof = tools.HallOfFame(1)
 
@@ -232,35 +260,40 @@ class GeneticAlgorithm:
         else:
             verbose = False
 
+        # stats to keep track of
         stats = tools.Statistics(lambda ind: ind.fitness.values)
         stats.register("avg", np.mean)
         stats.register("std", np.std)
         stats.register("min", np.min)
         stats.register("max", np.max)
-        logger.debug(mp.get_start_method())
         master_logbook = tools.Logbook()
         # Define headers as per your stats
         master_logbook.header = ["gen", "avg", "std", "min", "max"]
-        timeout = self.config.ga.max_time_per_ind
+
+        # debugging information
+        logger.debug(mp.get_start_method())
         pid = os.getpid()
+        timeout = self.config.ga.max_time_per_ind
+
+        # Parallel environment for evaluating individuals
         with managed_pool(max_workers=self.config.ga.n_processes) as executor:
-            logger.debug(
+            logger.info(
                 f"Starting Genetic Algorithm execution. Process ID: {pid}")
 
             # Initialize population
             pop = self.toolbox.population(n=self.config.ga.population_size)
-
             logger.debug(f"pop created.")
+
             # Evaluate the entire population
             futures = {executor.submit(eval_individual, ind, self.config,
                                        self.X_train, self.X_val,
                                        self.y_train, self.y_val): ind for ind in pop}
             logger.debug(f"futures created.")
 
-            fitnesses = []
             count = 0
             killed = 0
 
+            # Initial population evaluation
             # Iterate over futures as they complete
             try:
                 for future in as_completed(futures, timeout=timeout+1.0):
@@ -300,13 +333,17 @@ class GeneticAlgorithm:
             logger.debug(
                 f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
 
+            # generations after the parent gen
             for gen in range(1, self.config.ga.ngen + 1):
-                logger.debug(f"Generation {gen} started.")
+                logger.info(f"Generation {gen} started.")
 
                 # Select the next generation individuals
                 offspring = self.toolbox.select(pop, len(pop))
+                logger.debug(f"number of offsprings :{len(offspring)}.")
                 # Clone the selected individuals
                 offspring = list(map(self.toolbox.clone, offspring))
+                logger.debug(
+                    f"number of offsprings after map :{len(offspring)}.")
 
                 # Apply crossover and mutation on the offspring
                 for child1, child2 in zip(offspring[::2], offspring[1::2]):
@@ -325,6 +362,7 @@ class GeneticAlgorithm:
                     ind for ind in offspring if not ind.fitness.valid]
 
                 # Evaluate the entire population
+                # Setup future parallel execution with per individual time-out
                 futures = {executor.submit(eval_individual, ind, self.config,
                                            self.X_train, self.X_val,
                                            self.y_train, self.y_val): ind for ind in invalid_ind}
@@ -374,9 +412,6 @@ class GeneticAlgorithm:
 
                 logger.debug(f"self.record_fitness {gen} starting.")
                 self.record_fitness(pop, gen)
-                # for record in master_logbook:
-                #     record['gen'] = gen
-                # master_logbook.extend(master_logbook)
                 logger.debug(
                     f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
                 logger.debug(
@@ -388,7 +423,7 @@ class GeneticAlgorithm:
 
         # After recording statistics
         for entry in master_logbook:
-            print(entry)
+            logger.debug(entry)
         current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         fitness_filename = f'fitness_history_{current_date}.json'
         fitness_filepath = os.path.join("results", fitness_filename)
@@ -405,7 +440,7 @@ class GeneticAlgorithm:
         return best_individual, master_logbook
 
 
-@profile
+# @profile
 def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
     """
     Evaluate an individual's fitness based on validation accuracy.
@@ -425,7 +460,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     # Determine verbose level based on logger level
     log_level = logger.getEffectiveLevel()
     if log_level <= logging.DEBUG:
-        verbose = 0
+        verbose = 1
     elif log_level <= logging.INFO:
         verbose = 0
     else:
@@ -465,7 +500,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             verbose=verbose
         )
 
-        logger.debug(f"{pid} Model training completed.")
+        logger.info(f"{pid} Model training completed.")
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -475,11 +510,11 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             filepath, f"ga_results_{timestamp}_{unique_id}.keras")
 
         model.save(full_filepath)
-        logger.debug(f"{pid} Trained model saved to {full_filepath}.")
+        logger.info(f"{pid} Trained model saved to {full_filepath}.")
 
         # Evaluate the model
         val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
-        logger.debug(f"{pid} Validation Accuracy: {val_accuracy}")
+        logger.info(f"{pid} Validation Accuracy: {val_accuracy}")
         tf.keras.backend.clear_session()
         del model
         gc.collect()
