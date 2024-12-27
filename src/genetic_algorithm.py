@@ -315,6 +315,11 @@ class GeneticAlgorithm:
                     f = future.result()
                     logger.debug(f"future results {count}: {f}")
                     individual.fitness.values = f
+                    local_vars = locals()
+                    for var_name, var_value in local_vars.items():
+                        logger.debug(
+                            f" {count} -- {var_name} : {sys.getsizeof(var_value)} bytes")
+
             except TimeoutError:
                 killed += 1
                 logger.error(
