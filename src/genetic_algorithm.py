@@ -1,5 +1,9 @@
 # genetic_algorithm.py
 
+# because of some bugs in M2/M3 apple silicon and metal
+# i had to play with paralleization. in the end multiprocessing with pools
+
+import concurrent.futures
 import gc
 import json
 import logging
@@ -11,6 +15,7 @@ import sys
 import traceback
 import uuid
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
@@ -46,7 +51,7 @@ def handler(signum, frame):
 
 
 signal.signal(signal.SIGALRM, handler)
-signal.alarm(3600)
+# signal.alarm(3600)
 
 
 logger = logging.getLogger(__name__)
@@ -55,15 +60,25 @@ logger = logging.getLogger(__name__)
 fitness_counter = 0
 
 
+# @contextmanager
+# def managed_pool(processes):
+#     """Context manager for proper pool cleanup"""
+#     pool = mp.Pool(processes=processes, initializer=init_worker_logging)
+#     try:
+#         yield pool
+#     finally:
+#         pool.close()
+#         pool.join()
+
+
 @contextmanager
-def managed_pool(processes):
-    """Context manager for proper pool cleanup"""
-    pool = mp.Pool(processes=processes, initializer=init_worker_logging)
+def managed_pool(max_workers):
+    executor = ProcessPoolExecutor(
+        max_workers=max_workers, initializer=init_worker_logging)
     try:
-        yield pool
+        yield executor
     finally:
-        pool.close()
-        pool.join()
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def init_worker_logging():
@@ -145,7 +160,6 @@ class GeneticAlgorithm:
                               self.toolbox.attr_float, n=self.total_weights)
         self.toolbox.register("population", tools.initRepeat,
                               list, self.toolbox.individual)
-
         # Register genetic operators
         self.toolbox.register("mate", tools.cxTwoPoint)
         self.toolbox.register("mutate", tools.mutGaussian,
@@ -172,6 +186,7 @@ class GeneticAlgorithm:
         })
         logger.info(
             f"size of self.fitness_history: {asizeof.asizeof(self.fitness_history)} bytes")
+        # Store fitness history to file in batches
         if self.counters[pid] % batch == 0:
             try:
                 log_directory = '/Users/bernd/python/XOR/logs/'
@@ -200,10 +215,10 @@ class GeneticAlgorithm:
         - log (Logbook): Logbook containing statistics of the evolution.
         """
        # Use functools.partial to pass necessary data to eval_individual
-        eval_func = partial(eval_individual, config=self.config,
-                            X_train=self.X_train, X_val=self.X_val,
-                            y_train=self.y_train, y_val=self.y_val)
-        self.toolbox.register("evaluate", eval_func)
+        # eval_func = partial(eval_individual, config=self.config,
+        #                     X_train=self.X_train, X_val=self.X_val,
+        #                     y_train=self.y_train, y_val=self.y_val)
+        # self.toolbox.register("evaluate", eval_func)
 
         pop = self.toolbox.population(n=self.config.ga.population_size)
         hof = tools.HallOfFame(1)
@@ -226,33 +241,141 @@ class GeneticAlgorithm:
         master_logbook = tools.Logbook()
         # Define headers as per your stats
         master_logbook.header = ["gen", "avg", "std", "min", "max"]
-        with managed_pool(processes=self.config.ga.n_processes) as pool:
-            self.toolbox.register("map", pool.map)
-            pid = os.getpid()
+        timeout = self.config.ga.max_time_per_ind
+        pid = os.getpid()
+        with managed_pool(max_workers=self.config.ga.n_processes) as executor:
             logger.debug(
-                f"Starting Genetic Algorithm execution. process {pid}")
+                f"Starting Genetic Algorithm execution. Process ID: {pid}")
+
+            # Initialize population
+            pop = self.toolbox.population(n=self.config.ga.population_size)
+
+            logger.debug(f"pop created.")
+            # Evaluate the entire population
+            futures = {executor.submit(eval_individual, ind, self.config,
+                                       self.X_train, self.X_val,
+                                       self.y_train, self.y_val): ind for ind in pop}
+            logger.debug(f"futures created.")
+
+            fitnesses = []
+            count = 0
+            killed = 0
+
+            # Iterate over futures as they complete
+            try:
+                for future in as_completed(futures, timeout=timeout+1.0):
+                    # Retrieve the individual associated with the future
+                    individual = futures[future]
+
+                    count += 1
+                    logger.debug(f"future. {count}")
+                    f = future.result()
+                    logger.debug(f"future results {count}: {f}")
+                    individual.fitness.values = f
+            except TimeoutError:
+                killed += 1
+                logger.error(
+                    f"Evaluation timed out.{pid}. {count}. {killed}")
+            except Exception as e:
+                logger.error(
+                    f"Error during evaluation for individual {ind}: {e}")
+            finally:
+                for future in futures:
+                    if not future.done():
+                        individual = futures[future]
+                        individual.fitness.values = (0.0, )
+                        future.cancel()
+                        logger.warning(
+                            f"Total evaluations timed out and were cancelled: {killed}")
+
+            # Optional: Update Hall of Fame if needed
+            hof.update(pop)
+
+            # Log statistics
+            record = stats.compile(pop)
+            master_logbook.record(gen=0, **record)
+
+            logger.debug(
+                f"size of hof: {asizeof.asizeof(hof)} bytes")
+            logger.debug(
+                f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
+
             for gen in range(1, self.config.ga.ngen + 1):
                 logger.debug(f"Generation {gen} started.")
 
-                pop, logbook = algorithms.eaSimple(
-                    population=pop,
-                    toolbox=self.toolbox,
-                    cxpb=self.config.ga.cxpb,
-                    mutpb=self.config.ga.mutpb,
-                    ngen=1,
-                    stats=stats,
-                    halloffame=hof,
-                    verbose=verbose
-                )
-                logger.debug(f"self.record_fitness {gen} starting.")
-                self.record_fitness(pop, gen)
-                for record in logbook:
-                    record['gen'] = gen
-                master_logbook.extend(logbook)
-                logger.debug(
-                    f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
-                logger.debug(
-                    f"Generation {gen} completed process {pid}.")
+                # Select the next generation individuals
+                offspring = self.toolbox.select(pop, len(pop))
+                # Clone the selected individuals
+                offspring = list(map(self.toolbox.clone, offspring))
+
+                # Apply crossover and mutation on the offspring
+                for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                    if random.random() < self.config.ga.cxpb:
+                        self.toolbox.mate(child1, child2)
+                        del child1.fitness.values
+                        del child2.fitness.values
+
+                for mutant in offspring:
+                    if random.random() < self.config.ga.mutpb:
+                        self.toolbox.mutate(mutant)
+                        del mutant.fitness.values
+
+                # Evaluate the individuals with an invalid fitness
+                invalid_ind = [
+                    ind for ind in offspring if not ind.fitness.valid]
+
+                # Evaluate the entire population
+                futures = {executor.submit(eval_individual, ind, self.config,
+                                           self.X_train, self.X_val,
+                                           self.y_train, self.y_val): ind for ind in invalid_ind}
+                count = 0
+                killed = 0
+                try:
+                    for future in as_completed(futures, timeout=timeout+1):
+                        count += 1
+                        individual = futures[future]
+                        f = future.result(timeout=timeout)
+                        individual.fitness.values = f
+                        logger.debug(f"Evaluation {pid}. {count} {f}")
+
+                except TimeoutError:
+                    killed += 1
+                    logger.error(
+                        f"Evaluation timed out.{pid}. {count}. {killed}")
+                except Exception as e:
+                    logger.error(
+                        f"Error during evaluation for individual {ind}: {e}")
+                finally:
+                    for future in futures:
+                        if not future.done():
+                            individual = futures[future]
+                            individual.fitness.values = (0.0, )
+                            future.cancel()
+                            logger.warning(
+                                f"Total evaluations timed out and were cancelled: {killed}")
+
+                # Replace population with offspring
+                pop[:] = offspring
+                del offspring
+
+                # Update Hall of Fame
+                hof.update(pop)
+
+                # Compile and record statistics
+                record = stats.compile(pop)
+                master_logbook.record(gen=gen, **record)
+
+                gc.collect()
+
+            logger.debug(f"self.record_fitness {gen} starting.")
+            self.record_fitness(pop, gen)
+            for record in master_logbook:
+                record['gen'] = gen
+            master_logbook.extend(master_logbook)
+            logger.debug(
+                f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
+            logger.debug(
+                f"Generation {gen} completed process {pid}.")
             logger.debug(
                 f"Genetic Algorithm execution completed. process {pid}")
             logger.info(
