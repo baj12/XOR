@@ -70,7 +70,7 @@ def build_and_train_model(initial_weights, df: pd.DataFrame,
     # Determine verbose level based on logger level
     log_level = logger.getEffectiveLevel()
     if log_level <= logging.DEBUG:
-        verbose = 0
+        verbose = 1
     elif log_level <= logging.INFO:
         verbose = 0
     else:

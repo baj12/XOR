@@ -1,10 +1,19 @@
-# genetic_algorithm.py
+"""
+genetic_algorithm.py
 
-# because of some bugs in M2/M3 apple silicon and metal which cause at minimum
-# the macs with M3Pro and tensorflow-metal==1.1.0 to hang at various points.
-# i had to play with parallelization. in the end concurrent.futures does the trick.
-# Here we can implement a max wait time for an individual run (individual of the GA)
-# Of note, we train individual over 10 iterations, which mutation / etc is used?
+because of some bugs in M2/M3 apple silicon and metal which cause at minimum
+the macs with M3Pro and tensorflow-metal==1.1.0 to hang at various points.
+i had to play with parallelization. in the end concurrent.futures does the trick.
+Here we can implement a max wait time for an individual run (individual of the GA)
+Of note, we train individual over 10 iterations, which mutation / etc is used?
+
+there is some advanced logging going on that allows logging parallel processes
+
+commented codes allows changing tensorflow number of parallel processes and GPU usage
+
+record fitness was implemented during a search of a memory leak. 
+What might be better is a link to a SQL data base
+"""
 
 """
 Genetic Algorithm Implementation for [Your Project Name]
@@ -19,6 +28,7 @@ Functions:
     evaluate_individual(individual, config, X_train, X_val, y_train, y_val):
         Evaluates the fitness of an individual based on model performance.
 """
+
 
 import gc
 import json
@@ -35,7 +45,6 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
-
 import matplotlib.pyplot as plt
 import numpy as np  # Added for handling weights
 import pandas as pd
@@ -44,16 +53,17 @@ from deap import algorithms, base, creator, tools
 from memory_profiler import memory_usage, profile
 from pympler import asizeof
 from tensorflow.keras.backend import clear_session
-# from sklearn.model_selection import train_test_split
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Sequential  # Added for model manipulation
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
-
 from model import build_model, get_optimizer
 from utils import Config
+tf.config.threading.set_intra_op_parallelism_threads(
+    1)  # Set the number of threads for TensorFlow
 
-# tf.config.threading.set_intra_op_parallelism_threads(2)
-# tf.config.threading.set_inter_op_parallelism_threads(2)
+tf.config.threading.set_inter_op_parallelism_threads(
+    1)  # Set the number of threads for TensorFlow
+
 
 # this disables GPU
 # tf.config.set_visible_devices([], 'GPU')
@@ -494,7 +504,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         # Train the model
         model.fit(
             X_train, y_train,
-            epochs=10,
+            epochs=confitg.ga.epochs,
             batch_size=config.model.batch_size,
             validation_data=(X_val, y_val),
             verbose=verbose
