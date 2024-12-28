@@ -315,10 +315,6 @@ class GeneticAlgorithm:
                     f = future.result()
                     logger.debug(f"future results {count}: {f}")
                     individual.fitness.values = f
-                    local_vars = locals()
-                    for var_name, var_value in local_vars.items():
-                        logger.debug(
-                            f" {count} -- Mysize of {var_name} : {sys.getsizeof(var_value)} bytes")
 
             except TimeoutError:
                 killed += 1
@@ -435,6 +431,14 @@ class GeneticAlgorithm:
                     f"Genetic Algorithm execution completed. process {pid}")
                 logger.info(
                     f"size of self.fitness_history - 2: {asizeof.asizeof(self.fitness_history)} bytes")
+
+                local_vars = locals()
+                for var_name, var_value in local_vars.items():
+                    logger.debug(
+                        f" {count} -- Mysize of {var_name} : {sys.getsizeof(var_value)} bytes")
+                for var_name, var_value in vars(self).items():
+                    logger.debug(
+                        f"Mysize variable {var_name} : {sys.getsizeof(var_value)} bytes")
 
         # After recording statistics
         for entry in master_logbook:
