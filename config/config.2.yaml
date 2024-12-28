@@ -1,0 +1,17 @@
+# Genetic Algorithm Parameters
+ga:
+  population_size: 4
+  cxpb: 0.5
+  mutpb: 0.2
+  ngen: 50
+  n_processes: 1
+
+# Model Parameters
+model:
+  hl1: 200
+  hl2: 300
+  activation: "relu"
+  optimizer: "adam"
+  lr: 0.001
+  batch_size: 64
+  #  358   3554.4 MiB      0.0 MiB           1           return (val_accuracy,)

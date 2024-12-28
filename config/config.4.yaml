@@ -1,12 +1,10 @@
 # Genetic Algorithm Parameters
 ga:
-  population_size: 10
+  population_size: 40
   cxpb: 0.5
   mutpb: 0.2
-  ngen: 20
-  n_processes: 5
-  max_time_per_ind: 300
-  epochs: 10
+  ngen: 50
+  n_processes: 1
 
 # Model Parameters
 model:
@@ -16,4 +14,4 @@ model:
   optimizer: "adam"
   lr: 0.001
   batch_size: 64
-# 377   1333.8 MiB      0.0 MiB           1           return (val_accuracy,)
+# 358   7655.0 MiB      0.0 MiB           1           return (val_accuracy,)
