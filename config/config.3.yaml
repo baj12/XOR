@@ -5,7 +5,9 @@ ga:
   mutpb: 0.2
   ngen: 50
   n_processes: 1
-
+  max_time_per_ind: 60
+  epochs: 10
+  
 # Model Parameters
 model:
   hl1: 20

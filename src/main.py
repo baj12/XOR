@@ -7,13 +7,16 @@ import os
 import sys
 from datetime import datetime
 
+import psutil
 from sklearn.model_selection import train_test_split
 
-from genetic_algorithm import GeneticAlgorithm
+from genetic_algorithm import GeneticAlgorithm, managed_pool
 from model import build_and_train_model
 from plotRawData import plot_train_test_with_decision_boundary
-from utils import (load_config, load_results, plot_results, save_results,
-                   validate_file)
+from utils import (get_all_child_processes, kill_child_processes, load_config,
+                   load_results, plot_results, save_results,
+                   terminate_child_processes, validate_file,
+                   write_config_to_text)
 
 # logging.basicConfig(
 #     level=logging.DEBUG,  # Set to DEBUG to capture all levels of log messages
@@ -86,6 +89,8 @@ def parse_arguments():
     parser.add_argument(
         '--load', type=str, help='Path to load previous GA results.'
     )
+    parser.add_argument(
+        '--config', type=str, default='config/config.yaml', help='Path to config.yaml')
     # Define mutually exclusive logging levels
     parser.add_argument(
         '--log',
@@ -112,17 +117,33 @@ def main():
     7. Build and train the model using the best individual's weights.
     8. Plot and save the results.
     """
-    import argparse
-    import logging
-
-    from genetic_algorithm import GeneticAlgorithm, managed_pool
 
     args = parse_arguments()
     filepath = args.filepath
-    config = load_config('config/config.yaml')
+    config_path = args.config
+
     # Configure logging based on the parsed arguments
     logger = configure_logging(args.log)
     logger.debug("Starting main function.")
+    # **Convert Config object to dict**
+    try:
+        config = load_config(config_path)
+        config_dict = vars(config)  # or config.__dict__
+        config_dict['filepath'] = filepath
+        config_dict['config_path'] = config_path
+    except TypeError:
+        logger.error("Config object cannot be converted to a dictionary.")
+        sys.exit(1)
+
+    # Write configuration parameters to a plain text file
+    current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+    config_output_path = f"plots/config_parameters_{current_date}.txt"
+    os.makedirs(os.path.dirname(config_output_path), exist_ok=True)
+    try:
+        write_config_to_text(config_dict, config_output_path)
+    except Exception as e:
+        logger.error(f"Failed to write configuration to text file: {e}")
+        sys.exit(1)
 
     # Access config values
     population_size = config.ga.population_size
@@ -185,7 +206,6 @@ def main():
 
     # Build and train the model using the best individual's weights
     try:
-        current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         model = build_and_train_model(best_individual, df, config,
                                       X_train, X_test, Y_train, Y_test,
                                       model_save_path=f"models/final_model_{current_date}.keras",
@@ -211,6 +231,22 @@ def main():
     except Exception as e:
         logger.error(f"Error during model training: {e}")
         sys.exit(1)
+    logger.debug("All done waiting to exit.")
+    for proc in psutil.process_iter(['pid', 'name']):
+        if 'python' in proc.info['name']:
+            logger.debug(f"Killing process: {proc.info['pid']}")
+            proc.kill()
+
+    logger.debug("Initiating process cleanup.")
+    children = get_all_child_processes()
+    terminate_child_processes(children)
+    # Optionally, wait for processes to terminate gracefully
+    psutil.wait_procs(children, timeout=5)
+    # Forcefully kill any remaining processes
+    children = get_all_child_processes()
+    if children:
+        kill_child_processes(children)
+    logger.debug("Process cleanup completed.")
     sys.exit(0)
 
 

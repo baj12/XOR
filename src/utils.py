@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import pickle
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,6 +40,9 @@ class ModelConfig:
 class Config:
     ga: GAConfig
     model: ModelConfig
+
+    def to_dict(self):
+        return json.loads(json.dumps(self, default=lambda o: o.__dict__))
 
 
 def load_config(config_path: str) -> Config:
@@ -185,3 +190,104 @@ def load_results(filepath='results/ga_results.pkl'):
         data = pickle.load(f)
     logger.debug(f"Results loaded from {filepath}")
     return data
+
+
+def get_total_size(obj, seen=None):
+    """Recursively finds the total size of an object including its contents."""
+    size = sys.getsizeof(obj)
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+    if isinstance(obj, dict):
+        size += sum([get_total_size(v, seen) for v in obj.values()])
+        size += sum([get_total_size(k, seen) for k in obj.keys()])
+    elif hasattr(obj, '__dict__'):
+        size += get_total_size(obj.__dict__, seen)
+    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+        size += sum([get_total_size(i, seen) for i in obj])
+    return size
+
+
+def get_all_child_processes():
+    try:
+        current_process = psutil.Process(os.getpid())
+        children = current_process.children(recursive=True)
+        logger.debug(f"Found {len(children)} child process(es).")
+        for child in children:
+            logger.debug(f"Child Process PID={child.pid}, Name={child.name()}")
+        return children
+    except psutil.NoSuchProcess:
+        logger.error("Current process does not exist.")
+        return []
+    except Exception as e:
+        logger.error(
+            f"An error occurred while retrieving child processes: {e}")
+        return []
+
+
+def terminate_child_processes(children):
+    for child in children:
+        try:
+            logger.debug(
+                f"Terminating child process PID={child.pid}, Name={child.name()}")
+            child.terminate()
+        except psutil.NoSuchProcess:
+            logger.warning(f"Process PID={child.pid} does not exist.")
+        except psutil.AccessDenied:
+            logger.error(
+                f"Access denied when trying to terminate PID={child.pid}.")
+        except Exception as e:
+            logger.error(f"Error terminating PID={child.pid}: {e}")
+
+
+def kill_child_processes(children):
+    for child in children:
+        try:
+            logger.debug(
+                f"Killing child process PID={child.pid}, Name={child.name()}")
+            child.kill()
+        except psutil.NoSuchProcess:
+            logger.warning(f"Process PID={child.pid} does not exist.")
+        except psutil.AccessDenied:
+            logger.error(f"Access denied when trying to kill PID={child.pid}.")
+        except Exception as e:
+            logger.error(f"Error killing PID={child.pid}: {e}")
+
+
+def write_config_to_text(config: dict, output_path: str):
+    """
+    Writes configuration parameters to a plain text file.
+
+    Args:
+        config (dict): Configuration parameters.
+        output_path (str): Path to the output text file.
+    """
+    try:
+        with open(output_path, 'w') as file:
+            file.write("Configuration Parameters:\n")
+            file.write("==========================\n")
+            _write_dict(config, file)
+        logger.debug(f"Configuration parameters written to {output_path}.")
+    except Exception as e:
+        logger.error(f"Failed to write configuration to {output_path}: {e}")
+        raise
+
+
+def _write_dict(d: dict, file, indent: int = 0):
+    """
+    Recursively writes a dictionary to a file with indentation.
+
+    Args:
+        d (dict): The dictionary to write.
+        file (file object): The file object to write to.
+        indent (int): Current indentation level.
+    """
+    for key, value in d.items():
+        if isinstance(value, dict):
+            file.write('    ' * indent + f"{key}:\n")
+            _write_dict(value, file, indent + 1)
+        else:
+            file.write('    ' * indent + f"{key}: {value}\n")

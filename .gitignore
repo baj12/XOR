@@ -39,7 +39,6 @@ results/
 models/
 savedResults/
 mem*.txt
-mylog.txt
 mem*.png
 my*.txt
 sorted*.txt

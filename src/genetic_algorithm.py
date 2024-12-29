@@ -57,7 +57,7 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Sequential  # Added for model manipulation
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
 from model import build_model, get_optimizer
-from utils import Config
+from utils import Config, get_total_size
 tf.config.threading.set_intra_op_parallelism_threads(
     1)  # Set the number of threads for TensorFlow
 
@@ -120,7 +120,8 @@ def init_worker_logging():
 
     # Configure logging for the worker
     logging.basicConfig(
-        level=logging.DEBUG,  # Set to DEBUG to capture all debug messages
+        # levele should be set by the main process
+        # level=logging.INFO,  # Set to DEBUG to capture all debug messages
         format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
@@ -236,7 +237,7 @@ class GeneticAlgorithm:
                 os.makedirs(log_directory, exist_ok=True)
                 filepath = os.path.join(log_directory, filename)
 
-                with open(filename, 'a') as f:
+                with open(filepath, 'a') as f:
                     f.write(f"{self.fitness_history}\n")
                 logging.debug(
                     f"Process {pid}: Appended fitness: {self.fitness_history} to {filename}")
@@ -332,51 +333,53 @@ class GeneticAlgorithm:
                         logger.warning(
                             f"Total evaluations timed out and were cancelled: {killed}")
 
-            # Optional: Update Hall of Fame if needed
-            hof.update(pop)
+        # Optional: Update Hall of Fame if needed
+        hof.update(pop)
 
-            # Log statistics
-            record = stats.compile(pop)
-            master_logbook.record(gen=0, **record)
+        # Log statistics
+        record = stats.compile(pop)
+        master_logbook.record(gen=0, **record)
 
+        logger.debug(
+            f"size of hof: {asizeof.asizeof(hof)} bytes")
+        logger.debug(
+            f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
+
+        # generations after the parent gen
+        for gen in range(1, self.config.ga.ngen + 1):
+            logger.info(f"Generation {gen} started.")
+
+            # Select the next generation individuals
+            offspring = self.toolbox.select(pop, len(pop))
+            logger.debug(f"number of offsprings :{len(offspring)}.")
+            # Clone the selected individuals
+            offspring = list(map(self.toolbox.clone, offspring))
             logger.debug(
-                f"size of hof: {asizeof.asizeof(hof)} bytes")
-            logger.debug(
-                f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
+                f"number of offsprings after map :{len(offspring)}.")
 
-            # generations after the parent gen
-            for gen in range(1, self.config.ga.ngen + 1):
-                logger.info(f"Generation {gen} started.")
+            # Apply crossover and mutation on the offspring
+            for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                if random.random() < self.config.ga.cxpb:
+                    self.toolbox.mate(child1, child2)
+                    del child1.fitness.values
+                    del child2.fitness.values
 
-                # Select the next generation individuals
-                offspring = self.toolbox.select(pop, len(pop))
-                logger.debug(f"number of offsprings :{len(offspring)}.")
-                # Clone the selected individuals
-                offspring = list(map(self.toolbox.clone, offspring))
-                logger.debug(
-                    f"number of offsprings after map :{len(offspring)}.")
+            for mutant in offspring:
+                if random.random() < self.config.ga.mutpb:
+                    self.toolbox.mutate(mutant)
+                    del mutant.fitness.values
 
-                # Apply crossover and mutation on the offspring
-                for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                    if random.random() < self.config.ga.cxpb:
-                        self.toolbox.mate(child1, child2)
-                        del child1.fitness.values
-                        del child2.fitness.values
-
-                for mutant in offspring:
-                    if random.random() < self.config.ga.mutpb:
-                        self.toolbox.mutate(mutant)
-                        del mutant.fitness.values
-
-                # Evaluate the individuals with an invalid fitness
-                invalid_ind = [
-                    ind for ind in offspring if not ind.fitness.valid]
+            # Evaluate the individuals with an invalid fitness
+            # in case the offspring didn't change we don't need to re-evaluate
+            invalid_ind = [
+                ind for ind in offspring if not ind.fitness.valid]
+            with managed_pool(max_workers=self.config.ga.n_processes) as executor:
 
                 # Evaluate the entire population
                 # Setup future parallel execution with per individual time-out
                 futures = {executor.submit(eval_individual, ind, self.config,
                                            self.X_train, self.X_val,
-                                           self.y_train, self.y_val): ind for ind in invalid_ind}
+                                           self.y_train, self.y_val): ind for ind in offspring}
                 count = 0
                 killed = 0
                 try:
@@ -393,52 +396,60 @@ class GeneticAlgorithm:
                         f"Evaluation timed out.{pid}. {count}. {killed}")
                 except Exception as e:
                     logger.error(
-                        f"Error during evaluation for individual {ind}: {e}")
+                        f"Error during evaluation for individual {gen}: {e}")
                 finally:
+                    cn = 0
+                    fn = 0
                     for future in futures:
+                        fn += 1
                         if not future.done():
+                            cn += 1
                             individual = futures[future]
-                            individual.fitness.values = (0.0, )
+                            f = (0.0,)
+                            logger.debug(f"Evaluation {pid}. {count} {f}")
+                            individual.fitness.values = f
                             future.cancel()
                             logger.warning(
-                                f"Total evaluations timed out and were cancelled: {killed}")
+                                f"Total evaluations timed out and were cancelled: fn:{fn} - {killed} cn: {cn}")
 
-                # Replace population with offspring
-                pop[:] = offspring
-                del offspring
+            # check that not all individuals have 0.0 fitness, which would mean that the evaluation timed out
+            if all(ind.fitness.values == (0.0,) for ind in offspring):
+                logger.error(
+                    "All individuals have 0.0 fitness, indicating that the evaluation timed out.")
+                raise RuntimeError(
+                    "Evaluation timed out: All individuals have 0.0 fitness.")
 
-                # Update Hall of Fame
-                hof.update(pop)
+            # Replace population with offspring
+            pop[:] = offspring
+            del offspring
 
-                # Compile and record statistics
+            # Update Hall of Fame
+            hof.update(pop)
+
+            # Compile statistics about the new population
+            try:
                 record = stats.compile(pop)
-                master_logbook.record(gen=gen, **record)
-                logger.debug(f"Generation {gen} Statistics: {record}")
-                logger.debug(
-                    f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
-                logger.debug(
-                    f"size of hof: {asizeof.asizeof(hof)} bytes")
-                logger.debug(
-                    f"size of pop: {asizeof.asizeof(pop)} bytes")
+            except ValueError as e:
+                logger.error(f"Error during stats compilation: {e}")
+                for i, ind in enumerate(pop):
+                    logger.error(
+                        f"Individual {i} shape: {np.shape(ind)}, value: {ind}")
+                raise e
 
-                logger.debug(f"self.record_fitness {gen} starting.")
-                self.record_fitness(pop, gen)
-                logger.debug(
-                    f"size of master_logbook: {asizeof.asizeof(master_logbook)} bytes")
-                logger.debug(
-                    f"Generation {gen} completed process {pid}.")
-                logger.debug(
-                    f"Genetic Algorithm execution completed. process {pid}")
-                logger.info(
-                    f"size of self.fitness_history - 2: {asizeof.asizeof(self.fitness_history)} bytes")
+            # Compile and record statistics
+            record = stats.compile(pop)
+            master_logbook.record(gen=gen, **record)
 
-                local_vars = locals()
-                for var_name, var_value in local_vars.items():
-                    logger.debug(
-                        f" {count} -- Mysize of {var_name} : {sys.getsizeof(var_value)} bytes")
-                for var_name, var_value in vars(self).items():
-                    logger.debug(
-                        f"Mysize variable {var_name} : {sys.getsizeof(var_value)} bytes")
+            logger.debug(f"Generation {gen} Statistics: {record}")
+            self.record_fitness(pop, gen)
+
+            # local_vars = locals()
+            # for var_name, var_value in local_vars.items():
+            #     logger.debug(
+            #         f" {count} -- Mysize of {var_name} : {sys.getsizeof(var_value)} bytes")
+            # for var_name, var_value in vars(self).items():
+            #     logger.debug(
+            #         f"Mysize variable {var_name} : {sys.getsizeof(var_value)} bytes")
 
         # After recording statistics
         for entry in master_logbook:
@@ -485,7 +496,10 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     else:
         verbose = 0
 
-    logger.info(f"{pid} Starting evaluation of individual.")
+    if (individual.fitness.valid):
+        logger.debug(f"Individual already evaluated. Skipping.")
+        return individual.fitness.values
+
     try:
         # Build the model
         model = build_model(config)
@@ -519,7 +533,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             verbose=verbose
         )
 
-        logger.info(f"{pid} Model training completed.")
+        logger.debug(f"{pid} Model training completed.")
         filepath = "results"
         os.makedirs(filepath, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -528,8 +542,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         full_filepath = os.path.join(
             filepath, f"ga_results_{timestamp}_{unique_id}.keras")
 
-        model.save(full_filepath)
-        logger.info(f"{pid} Trained model saved to {full_filepath}.")
+        # mod ger.info(f"{pid} Trained model saved to {full_filepath}.")
 
         # Evaluate the model
         val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
