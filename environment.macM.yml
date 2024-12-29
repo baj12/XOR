@@ -1,4 +1,4 @@
-name: xorProject-test
+name: xorProject
 channels:
   - conda-forge
   - defaults
