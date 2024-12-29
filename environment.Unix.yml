@@ -221,7 +221,7 @@ dependencies:
       - tenacity==8.5.0
       - tensorboard==2.16.2
       - tensorboard-data-server==0.7.2
-      - tensorflow[and-cuda]==2.16.2
+      - tensorflow[and-cuda]
       - tensorflow-io-gcs-filesystem==0.37.1
       - tensorstore==0.1.68
       - termcolor==2.5.0
@@ -229,7 +229,7 @@ dependencies:
       - tiktoken==0.8.0
       - tokenizers==0.20.3
       - toolz==1.0.0
-      - torch==2.5.1
+      - torch
       - torchvision==0.20.1
       - tqdm==4.67.0
       - transformers==4.46.3
