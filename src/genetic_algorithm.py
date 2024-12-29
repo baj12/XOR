@@ -30,6 +30,9 @@ Functions:
 """
 
 
+# from memory_profiler import memory_usage, profile
+
+
 import gc
 import json
 import logging
@@ -50,7 +53,6 @@ import numpy as np  # Added for handling weights
 import pandas as pd
 import tensorflow as tf
 from deap import algorithms, base, creator, tools
-from memory_profiler import memory_usage, profile
 from pympler import asizeof
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.layers import Dense, Input
