@@ -38,6 +38,11 @@ Run the main script with the path to the input CSV file containing `x`, `y`, and
 python src/main.py data/raw/xor_data.min1.csv
 ```
 
+```sh
+srun -c 4 --mem 48G -p gpu -q fast --gres=gpu:1 python src/main.py data/raw/xor_data.csv --config config/config.yaml 2>&1 | tee plots/mylog.xor_data.config.txt
+```
+
+
 ### Clean Directories
 
 Clean and recreate the specified directories:
