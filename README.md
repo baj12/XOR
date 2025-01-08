@@ -191,3 +191,4 @@ check memory leak
 
 compare only CPU vs with GPU and see which one is faster by how much?
 
+check out kipoi for model description
