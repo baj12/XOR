@@ -1,0 +1,143 @@
+Project description
+
+based on a generalized XOR problem we going to monitor and compare key performance characteristics like 
+training time, probability of success, and other (please suggest others).
+
+The overall goal is to identify network architectures that allows learning random noise. I.e. we shall identify the smallest/least complex artificial 
+neural network architecture that allows learning random data, compared to having a know signal (XOR) hidden in the data. 
+Since there is a defined minimal solution to the XOR problem we can also ask if adding random noise in the form of additional input dimensions has an 
+influence on the learning process.
+
+- Parameters to evaluate are network architecture (0,1,2,3,4,5,10,20, others?) hidden layers with varying number of neurons.
+- Input can vary as well if we add random noise to the input, where 2 dimensions are corresponding the the XOR problem and potential others are just noise.
+noise should be 0,1,2,3,4,5, 10,50,100,1000 dimensions. Input can also vary by the gap between the two classes of the XOR problem. 
+Since in the generalized XOR problem we are adding some noise to the main points (-1,-1; 1,1 and -1,1; 1,-1) there can be a clear gap (when distribution is up to 0.5), 
+up to an overlap of classes (distribution >1).
+
+Since we are using a genetic algorithm together with back-propagation the parameters for the GA should be evaluated as well.
+The probability of finding a solution can be indicative of whether the problem has a solution (i.e. there is information in the data) or not.
+
+The current setup uses config/yaml files to define the parameters for the network and the training. Data is stored under data/raw. 
+We still need to better define a clean nomenclature and directory / output structure to capture all the necessary output.
+
+
+We then need a script to create the config files that adhere to the naming conventions.
+
+We need a script that executes and monitors the calculations
+
+We need to identify the different questions 
+
+Cloude improved project description:
+=====================================
+
+
+# Project Description: Learning Capacity Analysis of Neural Networks with Noise
+
+## Overview
+This research project investigates neural network learning capabilities by comparing performance on pure XOR problems versus XOR problems with added random noise dimensions. The study aims to identify minimal network architectures capable of learning random data versus structured data (XOR), providing insights into network complexity requirements and noise tolerance.
+
+## Research Objectives
+1. Determine minimal network architectures capable of learning:
+   - Pure XOR problems
+   - XOR problems with additional noise dimensions
+   - Pure random noise
+2. Analyze the impact of noise on learning performance
+3. Evaluate the relationship between network complexity and learning capacity
+
+## Experimental Parameters
+
+### Network Architecture
+- Hidden layers: 0, 1, 2, 3, 4, 5, 10, 20 layers
+- Neurons per layer: To be determined based on initial experiments
+- Consider adding skip connections as an architectural variant
+
+### Input Variations
+- Base: 2D XOR problem
+- Noise dimensions: 0, 1, 2, 3, 4, 5, 10, 50, 100, 1000
+- Class separation:
+  - Clear separation (distribution ≤ 0.5)
+  - Partial overlap (0.5 < distribution < 1)
+  - Complete overlap (distribution ≥ 1)
+
+### Performance Metrics
+- Training time
+- Probability of successful convergence
+- Final accuracy
+- Loss curve characteristics
+- Memory usage
+- Number of parameters
+- Effective capacity utilization
+
+### Genetic Algorithm Parameters
+- Population size
+- Mutation rate
+- Crossover probability
+- Selection pressure
+- Generation limit
+
+## Implementation Structure
+
+### Current Setup
+```
+project_root/
+├── config/
+│   └── yaml/
+├── data/
+│   └── raw/
+└── scripts/
+```
+
+### Required Development
+
+1. Configuration Management
+   - Develop standardized naming conventions
+   - Create script for automated config file generation
+   - Implement parameter validation
+
+2. Experiment Pipeline
+   - Data generation script
+   - Training execution script
+   - Performance monitoring system
+   - Results collection and storage
+
+3. Output Structure
+   - Define consistent directory hierarchy
+   - Implement automated logging
+   - Create standardized results format
+
+4. Analysis Framework
+   - Define key research questions
+   - Develop statistical analysis procedures
+   - Create visualization templates
+
+## Research Questions to Address
+
+1. What is the minimal network architecture required for:
+   - Pure XOR learning?
+   - XOR with noise dimensions?
+   - Pure noise learning?
+
+2. How does input dimensionality affect:
+   - Learning time?
+   - Success probability?
+   - Required network complexity?
+
+3. What is the relationship between:
+   - Network capacity and noise tolerance?
+   - Architecture complexity and learning stability?
+   - Input noise and required training time?
+
+4. How do genetic algorithm parameters influence:
+   - Convergence speed?
+   - Solution quality?
+   - Robustness across different problem configurations?
+
+## Next Steps
+
+1. Finalize experimental parameter ranges
+2. Implement configuration generation system
+3. Develop execution monitoring framework
+4. Create standardized results collection system
+5. Define specific success criteria for each experiment type
+
+This enhanced project description provides a clearer structure, adds important metrics to consider, and outlines specific implementation needs. Would you like me to elaborate on any particular aspect?
