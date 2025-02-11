@@ -103,6 +103,32 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def cleanup_processes():
+    logger.debug("Initiating process cleanup.")
+
+    # Clean up multiprocessing resources
+    try:
+        multiprocessing.get_context('fork')
+        for p in multiprocessing.active_children():
+            p.terminate()
+            p.join()
+    except Exception as e:
+        logger.debug(f"Error during multiprocessing cleanup: {e}")
+
+    # Clean up remaining processes
+    children = get_all_child_processes()
+    if children:
+        terminate_child_processes(children)
+        psutil.wait_procs(children, timeout=3)
+
+        # Check for remaining processes
+        remaining = get_all_child_processes()
+        if remaining:
+            kill_child_processes(remaining)
+
+    logger.debug("Process cleanup completed.")
+
+
 def main():
     """
     Main function to run the XOR project.
@@ -237,17 +263,21 @@ def main():
             logger.debug(f"Killing process: {proc.info['pid']}")
             proc.kill()
 
-    logger.debug("Initiating process cleanup.")
-    children = get_all_child_processes()
-    terminate_child_processes(children)
-    # Optionally, wait for processes to terminate gracefully
-    psutil.wait_procs(children, timeout=5)
-    # Forcefully kill any remaining processes
-    children = get_all_child_processes()
-    if children:
-        kill_child_processes(children)
-    logger.debug("Process cleanup completed.")
-    sys.exit(0)
+    try:
+        logger.debug("All done, starting cleanup.")
+        cleanup_processes()
+
+        # Instead of killing the Python process directly, exit cleanly
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+        cleanup_processes()
+        sys.exit(1)
+    finally:
+        # Ensure multiprocessing resources are released
+        if 'pool' in locals():
+            pool.close()
+            pool.join()
 
 
 if __name__ == "__main__":

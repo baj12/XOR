@@ -241,10 +241,6 @@ def initialize_tensorflow():
 
 
 def validate_config(config):
-    assert isinstance(
-        config.model.hl1, int) and config.model.hl1 > 0, "hl1 must be a positive integer."
-    assert isinstance(
-        config.model.hl2, int) and config.model.hl2 > 0, "hl2 must be a positive integer."
     valid_activations = ['relu', 'sigmoid', 'tanh', 'softmax', 'linear']
     assert config.model.activation in valid_activations, f"Unsupported activation function: {config.model.activation}"
     logger.debug("Configuration parameters validated successfully.")
@@ -272,63 +268,25 @@ def build_model(config: Config) -> Sequential:
     logger.debug(f"{pid} - Model configuration: {config.model}")
 
     model = Sequential(name=f"model_{pid}_{current_date}_{unique_id}")
-    logger.debug(f"{pid} Sequential done.")
+    # Input layer
+    model.add(Input(shape=(2,)))
 
-    model.add(Input(shape=(2,)))  # Input layer matching feature dimensions
-    logger.debug(f"{pid} add done.")
+   # Add hidden layers dynamically
+    for i, units in enumerate(config.model.hidden_layers):
+        model.add(Dense(
+            units=units,
+            activation=config.model.activation,
+            name=f'hidden_layer_{i+1}'
+        ))
+        logger.debug(
+            f"{pid} Added hidden_layer_{i+1} with {units} units and '{config.model.activation}' activation.")
 
-    # Validate configuration parameters
-    validate_config(config)
-
-    logger.debug(
-        f"{pid} add 2 {config.model.hl1} - {config.model.activation}.")
-    # Add first hidden layer
-    model.add(Dense(
-        units=config.model.hl1,
-        activation=config.model.activation,
-        name='hidden_layer_1'
-    ))
-    logger.debug(
-        f"{pid} Added hidden_layer_1 with {config.model.hl1} units and '{config.model.activation}' activation.")
-
-    # Add second hidden layer
-    model.add(Dense(
-        units=config.model.hl2,
-        activation=config.model.activation,
-        name='hidden_layer_2'
-    ))
-    logger.debug(
-        f"{pid} Added hidden_layer_2 with {config.model.hl2} units and '{config.model.activation}' activation.")
-
-    # Output layer for binary classification
+    # Output layer
     model.add(Dense(1, activation='sigmoid', name='output_layer'))
-    logger.debug(
-        f"{pid} Added output_layer with 1 unit and 'sigmoid' activation.")
 
-    # Configure optimizer
     optimizer = get_optimizer(config.model.optimizer, config.model.lr)
-    logger.debug(
-        f"{pid} Configured optimizer: {config.model.optimizer} with learning rate {config.model.lr}")
-
-    # Compile the model
     model.compile(optimizer=optimizer,
                   loss='binary_crossentropy', metrics=['accuracy'])
-    logger.debug(f"{pid} Model compiled successfully.")
-    # Setup TensorBoard callback for profiling
-    log_dir = "logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-    # Adjust batch numbers as needed
-    tensorboard_callback = TensorBoard(
-        log_dir=log_dir, profile_batch='500,520')
-
-    # # Visualize the model architecture
-    # try:
-    #     plot_model(model, to_file=f"plots/model_architecture.{pid}.{current_date}.{unique_id}.png",
-    #                show_shapes=True, show_layer_names=True)
-    #     logger.debug(
-    #         f"{pid} Model architecture saved to 'model_architecture.png'.")
-    # except Exception as e:
-    #     logger.error(f"{pid} Failed to plot model architecture: {e}")
-    #     raise
 
     return model
 

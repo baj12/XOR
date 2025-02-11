@@ -4,14 +4,13 @@ ga:
   cxpb: 0.5
   mutpb: 0.2
   ngen: 50
-  n_processes: 1
+  n_processes: 10
   epochs: 10
   max_time_per_ind: 600
 
 # Model Parameters
 model:
-  hl1: 20
-  hl2: 30
+  hidden_layers: [20,30]  # Example with 3 hidden layers
   activation: "relu"
   optimizer: "adam"
   lr: 0.001

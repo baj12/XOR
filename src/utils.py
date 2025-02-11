@@ -28,8 +28,7 @@ class GAConfig:
 
 @dataclass
 class ModelConfig:
-    hl1: int
-    hl2: int
+    hidden_layers: list[int]  # List of neurons per hidden layer
     activation: str
     optimizer: str
     lr: float

@@ -33,8 +33,8 @@ Functions:
 # from memory_profiler import memory_usage, profile
 
 
-import gc
 import json
+import gc
 import logging
 import multiprocessing as mp
 import os
@@ -58,8 +58,10 @@ from tensorflow.keras.backend import clear_session
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Sequential  # Added for model manipulation
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
-from model import build_model, get_optimizer
 from utils import Config, get_total_size
+from model import build_model, get_optimizer
+
+
 tf.config.threading.set_intra_op_parallelism_threads(
     1)  # Set the number of threads for TensorFlow
 
@@ -186,7 +188,6 @@ class GeneticAlgorithm:
             if weights:
                 for w in weights:
                     total_weights += w.size
-        logger.debug(f"Total weights calculated: {total_weights}")
         return total_weights
 
     def setup_deap(self):
