@@ -9,6 +9,42 @@ from .parameter_sets import (ARCHITECTURE_VARIANTS, CLASS_SEPARATION,
                              MODEL_PARAMS, NEURONS_RANGE, NOISE_DIMENSIONS)
 
 
+def get_data_filepath(config_path: str) -> str:
+    """
+    Get the expected data filepath for a given configuration.
+    """
+    config_name = os.path.basename(config_path).replace('.yaml', '')
+    return os.path.join('data/raw', f"{config_name}_data.csv")
+
+
+def parse_filename_parameters(filename):
+    """Parse parameters from filename."""
+    # Example: xor_data_n10000_noise0.50_ratio1.00_seed42.csv
+    parts = filename.replace('.csv', '').split('_')
+    return {
+        'n_samples': int(parts[2][1:]),
+        'noise_std': float(parts[3][5:]),
+        'ratio_classes': float(parts[4][5:]),
+        'random_state': int(parts[5][4:])
+    }
+
+
+def validate_data_parameters(filepath, config):
+    """Validate that the data file matches the configuration."""
+    # Parse parameters from filename
+    filename = os.path.basename(filepath)
+    params = parse_filename_parameters(filename)
+
+    # Compare with config
+    if (params['noise_std'] != config.experiment.noise_dimensions or
+        params['ratio_classes'] != config.data.class_distribution or
+            params['n_samples'] != config.data.dataset_size):
+        raise ValueError(
+            f"Data parameters in file ({params}) do not match "
+            f"configuration requirements ({config.data})"
+        )
+
+
 def generate_parameter_combinations():
     """Generate all valid parameter combinations for experiments."""
     experiment_id = 0

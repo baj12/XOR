@@ -44,3 +44,5 @@ my*.txt
 sorted*.txt
 last*.txt
 mprofil*.dat
+config/*.yaml
+config/yaml/*

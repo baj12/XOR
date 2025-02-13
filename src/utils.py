@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,9 @@ def managed_multiprocessing():
     try:
         yield
     finally:
+        # Clean up any remaining multiprocessing resources
+        cleanup_processes()
+        tf.keras.backend.clear_session()
         # Clean up any remaining multiprocessing resources
         for p in multiprocessing.active_children():
             p.terminate()
@@ -84,6 +88,88 @@ class Config:
     ga: GAConfig
     model: ModelConfig
     metrics: dict
+
+
+def cleanup_processes():
+    """Cleanup any remaining processes."""
+    logger.debug("Initiating process cleanup.")
+
+    import psutil
+    current_process = psutil.Process()
+    children = current_process.children(recursive=True)
+
+    for child in children:
+        try:
+            logger.debug(f"Terminating process: {child.pid}")
+            child.terminate()
+        except psutil.NoSuchProcess:
+            logger.debug(f"Process {child.pid} no longer exists")
+            pass
+        except Exception as e:
+            logger.error(f"Error terminating process {child.pid}: {e}")
+
+    # Wait for processes to terminate
+    gone, alive = psutil.wait_procs(children, timeout=3)
+
+    # Force kill any remaining processes
+    for p in alive:
+        try:
+            logger.debug(f"Force killing process: {p.pid}")
+            p.kill()
+        except psutil.NoSuchProcess:
+            pass
+        except Exception as e:
+            logger.error(f"Error killing process {p.pid}: {e}")
+
+    # Clear any TensorFlow sessions
+    try:
+        tf.keras.backend.clear_session()
+        logger.debug("TensorFlow session cleared")
+    except Exception as e:
+        logger.error(f"Error clearing TensorFlow session: {e}")
+
+    logger.debug("Process cleanup completed.")
+
+
+def configure_logging(log_level=None):
+    import logging
+    import os
+    import sys
+
+    if not log_level:
+        log_level = os.getenv('LOG_LEVEL', 'DEBUG')
+
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        print(f"Invalid log level: {log_level}")
+        sys.exit(1)
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        print(f"Invalid log level: {log_level}")
+        sys.exit(1)
+
+    # Clear existing handlers to prevent duplicates
+    logger = logging.getLogger()
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    logging.basicConfig(
+        level=numeric_level,
+        format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('debug.log', mode='a')  # Adds FileHandler
+        ]
+    )
+    logger = logging.getLogger(__name__)
+    logger.debug("Logging configured successfully.")
+
+    # Suppress DEBUG logs from specific third-party libraries
+    libraries_to_suppress = ['matplotlib']
+    for lib in libraries_to_suppress:
+        logging.getLogger(lib).setLevel(logging.WARNING)
+
+    return logger
 
 
 def load_config(config_path: str) -> Config:

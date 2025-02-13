@@ -33,8 +33,9 @@ Functions:
 # from memory_profiler import memory_usage, profile
 
 
-import json
 import gc
+import contextlib
+import json
 import logging
 import multiprocessing as mp
 import os
@@ -113,6 +114,50 @@ def managed_pool(max_workers):
         yield executor
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
+
+
+@contextlib.contextmanager
+def timeout_context(seconds):
+    def handler(signum, frame):
+        raise TimeoutError("Evaluation timed out")
+    # Register a function to raise a TimeoutError on the signal
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        # Disable the alarm
+        signal.alarm(0)
+
+
+def evaluate_population(self, population):
+    """Evaluate all individuals in the population using ProcessPoolExecutor."""
+    eval_data = [(ind, self.config, self.X_train, self.X_test,
+                  self.y_train, self.y_test) for ind in population]
+
+    results = []
+    timeout = self.config.ga.max_time_per_ind
+
+    with ProcessPoolExecutor(max_workers=self.config.ga.n_processes) as executor:
+        futures = {executor.submit(eval_individual, data): data[0]
+                   for data in eval_data}
+
+        for future in futures:
+            individual = futures[future]
+            try:
+                with timeout_context(timeout):
+                    fitness = future.result(timeout=timeout)
+                results.append((individual, fitness))
+            except (TimeoutError, Exception) as e:
+                logger.warning(f"Evaluation timed out or failed: {str(e)}")
+                results.append((individual, (0.0,)))
+                future.cancel()
+
+    # Assign fitnesses back to individuals
+    for ind, fit in results:
+        ind.fitness.values = fit
+
+    return population
 
 
 def init_worker_logging():

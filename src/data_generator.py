@@ -1,83 +1,100 @@
 import argparse
+import logging
 import math
 import os
+import sys
 
 import numpy as np
 import pandas as pd
 
+from src.utils import Config, load_config
 
-def generate_xor_data(n_samples=10000, noise_std=0.5, ratio_classes=1.0,
-                      random_state=None, min_val=-10.0, max_val=10.0, buffer=0):
+# run by
+# for fp in config/yaml/config_00*.yaml ; do python -m src.data_generator --config $fp ; done
+
+# Add the project root directory to the Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+
+logger = logging.getLogger(__name__)
+# Configure basic logging if not configured elsewhere
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s'
+)
+
+
+def generate_xor_data(n_samples=10000, noise_std=0.5, ratio_classes=1.0, random_state=None):
     """
-    Generates a synthetic XOR dataset with noise.
+    Generate XOR dataset.
 
-    Parameters:
-    - n_samples (int): Total number of samples to generate.
-    - noise_std (float): Standard deviation of Gaussian noise to add.
-    - ratio_classes (float): Ratio between the classes.
-    - random_state (int or None): Seed for reproducibility.
-    - min_val (float): Minimum value for features.
-    - max_val (float): Maximum value for features.
-    - buffer (float): Buffer zone between classes.
-
-    Returns:
-    - DataFrame: A pandas DataFrame containing the features and labels.
+    Args:
+        n_samples (int): Exact number of samples to generate
+        noise_std (float): Standard deviation of noise to add
+        ratio_classes (float): Ratio between classes
+        random_state (int): Random seed for reproducibility
     """
+    logger.debug(f"Generating XOR data with parameters:")
+    logger.debug(f"  n_samples: {n_samples}")
+    logger.debug(f"  noise_std: {noise_std}")
+    logger.debug(f"  ratio_classes: {ratio_classes}")
+    logger.debug(f"  random_state: {random_state}")
+
     if random_state is not None:
         np.random.seed(random_state)
 
-    # Validate parameters
-    if min_val >= max_val:
-        raise ValueError("min_val must be less than max_val.")
-
-    # Number of samples per quadrant
+    # Generate exactly n_samples points
     samples_per_quadrant = n_samples // 4
+    remainder = n_samples % 4
 
-    # Initialize lists to hold data
+    # Lists to store data
     X = []
     y = []
-    center = (max_val - min_val)/2 + min_val
-    max_val_Min, max_val_Max = sorted([center + buffer, max_val])
-    min_val_Min, min_val_Max = sorted([center - buffer, min_val])
 
-    # Generate data for each quadrant
-    # Quadrant 1 (upper right) - Label 1
-    n_samples_q1 = int(samples_per_quadrant * ratio_classes)
-    x1 = np.random.uniform(max_val_Min, max_val_Max, n_samples_q1)
-    y1 = np.random.uniform(max_val_Min, max_val_Max, n_samples_q1)
-    X.extend(list(zip(x1, y1)))
-    y.extend([1] * n_samples_q1)
+    # Generate samples for each quadrant
+    for quadrant in range(4):
+        # Add extra point to some quadrants if n_samples isn't divisible by 4
+        current_samples = samples_per_quadrant + \
+            (1 if quadrant < remainder else 0)
 
-    # Quadrant 2 (upper left) - Label 0
-    n_samples_q2 = int(samples_per_quadrant / ratio_classes)
-    x2 = np.random.uniform(min_val_Min, min_val_Max, n_samples_q2)
-    y2 = np.random.uniform(max_val_Min, max_val_Max, n_samples_q2)
-    X.extend(list(zip(x2, y2)))
-    y.extend([0] * n_samples_q2)
+        if quadrant == 0:  # Top right (class 1)
+            x = np.random.uniform(0, 10, current_samples)
+            y_coords = np.random.uniform(0, 10, current_samples)
+            label = np.ones(current_samples)
+        elif quadrant == 1:  # Bottom left (class 1)
+            x = np.random.uniform(-10, 0, current_samples)
+            y_coords = np.random.uniform(-10, 0, current_samples)
+            label = np.ones(current_samples)
+        elif quadrant == 2:  # Top left (class 0)
+            x = np.random.uniform(-10, 0, current_samples)
+            y_coords = np.random.uniform(0, 10, current_samples)
+            label = np.zeros(current_samples)
+        else:  # Bottom right (class 0)
+            x = np.random.uniform(0, 10, current_samples)
+            y_coords = np.random.uniform(-10, 0, current_samples)
+            label = np.zeros(current_samples)
 
-    # Quadrant 3 (lower left) - Label 1
-    n_samples_q3 = int(samples_per_quadrant * ratio_classes)
-    x3 = np.random.uniform(min_val_Min, min_val_Max, n_samples_q3)
-    y3 = np.random.uniform(min_val_Min, min_val_Max, n_samples_q3)
-    X.extend(list(zip(x3, y3)))
-    y.extend([1] * n_samples_q3)
+        # Add noise if specified
+        if noise_std > 0:
+            x += np.random.normal(0, noise_std, current_samples)
+            y_coords += np.random.normal(0, noise_std, current_samples)
 
-    # Quadrant 4 (lower right) - Label 0
-    n_samples_q4 = int(samples_per_quadrant / ratio_classes)
-    x4 = np.random.uniform(max_val_Min, max_val_Max, n_samples_q4)
-    y4 = np.random.uniform(min_val_Min, min_val_Max, n_samples_q4)
-    X.extend(list(zip(x4, y4)))
-    y.extend([0] * n_samples_q4)
+        X.extend(zip(x, y_coords))
+        y.extend(label)
 
-    # Add noise to the coordinates
+    # Convert to numpy arrays
     X = np.array(X)
-    X += np.random.normal(0, noise_std, X.shape)
+    y = np.array(y)
 
     # Create DataFrame
-    data = pd.DataFrame(X, columns=['x', 'y'])
-    data['label'] = y
+    df = pd.DataFrame(X, columns=['x', 'y'])
+    df['label'] = y.astype(int)
 
-    return data
+    logger.debug(f"Generated dataset with {len(df)} samples")
+
+    return df
 
 
 def save_data(data, filepath):
@@ -114,19 +131,150 @@ def parse_arguments():
 
     return parser.parse_args()
 
+# In data_generator.py
+
+
+def generate_filename(params):
+    """Generate a filename that encodes the data generation parameters."""
+    return (f"xor_data_"
+            f"n{params['n_samples']}_"
+            f"noise{params['noise_std']:.2f}_"
+            f"ratio{params['ratio_classes']:.2f}_"
+            f"seed{params['random_state']}"
+            f".csv")
+
+
+def parse_filename_parameters(filename):
+    """
+    Parse parameters from filename.
+
+    Args:
+        filename (str): Name of the file
+
+    Returns:
+        dict: Dictionary containing parsed parameters
+    """
+    try:
+        # Remove .csv extension and split by underscore
+        parts = filename.replace('.csv', '').split('_')
+        return {
+            'n_samples': int(parts[2][1:]),
+            'noise_std': float(parts[3][5:]),
+            'ratio_classes': float(parts[4][5:]),
+            'random_state': int(parts[5][4:])
+        }
+    except (IndexError, ValueError) as e:
+        raise ValueError(
+            f"Invalid filename format: {filename}. Error: {str(e)}")
+
+
+def generate_data_from_config(config_path: str):
+    """Generate data based on YAML configuration file."""
+    config = load_config(config_path)
+
+    # Generate data filename based on config filename
+    config_name = os.path.basename(config_path).replace('.yaml', '')
+    data_filename = f"{config_name}_data.csv"
+    data_filepath = os.path.join('data/raw', data_filename)
+
+    # Check if data exists and is valid
+    if os.path.exists(data_filepath):
+        logger.info(f"Found existing data file: {data_filepath}")
+        existing_data = pd.read_csv(data_filepath)
+
+        if validate_existing_data(existing_data, config):
+            logger.info("Existing data is valid, skipping generation")
+            return data_filepath
+        else:
+            logger.warning("Existing data is invalid, regenerating")
+
+    # Generate new data using correct parameters from config
+    logger.info("Generating new data from configuration")
+    data = generate_xor_data(
+        n_samples=config.data.dataset_size,
+        noise_std=config.experiment.noise_dimensions,  # This is 0 in your YAML
+        # Use class_separation instead of class_distribution
+        ratio_classes=config.experiment.class_separation,
+        random_state=42
+    )
+
+    # Save data
+    os.makedirs(os.path.dirname(data_filepath), exist_ok=True)
+    data.to_csv(data_filepath, index=False)
+    logger.info(f"Data saved to {data_filepath}")
+
+    return data_filepath
+
+
+def print_config_values(config: Config):
+    """Print relevant configuration values for debugging."""
+    logger.debug("Configuration values:")
+    logger.debug(f"Dataset size: {config.data.dataset_size}")
+    logger.debug(f"Class distribution: {config.data.class_distribution}")
+    logger.debug(f"Noise dimensions: {config.experiment.noise_dimensions}")
+    logger.debug(f"Class separation: {config.experiment.class_separation}")
+
+
+def validate_existing_data(data: pd.DataFrame, config: Config) -> bool:
+    """Validate that existing data matches configuration requirements."""
+    try:
+        # Check number of samples
+        if len(data) != config.data.dataset_size:
+            logger.warning(
+                f"Sample size mismatch: found {len(data)} samples, "
+                f"config specifies {config.data.dataset_size}"
+            )
+            return False
+
+        # Check columns
+        required_columns = {'x', 'y', 'label'}
+        if not required_columns.issubset(data.columns):
+            logger.warning(
+                f"Missing required columns: {required_columns - set(data.columns)}"
+            )
+            return False
+
+        logger.debug("Data validation successful:")
+        logger.debug(f"  Samples: {len(data)}")
+        logger.debug(f"  Columns: {list(data.columns)}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error validating data: {str(e)}")
+        return False
+
 
 def main():
-    args = parse_arguments()
-    data = generate_xor_data(
-        n_samples=args.n_samples,
-        ratio_classes=args.ratio_classes,
-        noise_std=args.noise_std,
-        random_state=args.random_state,
-        buffer=args.buffer,
-        min_val=args.min_val,
-        max_val=args.max_val
+    parser = argparse.ArgumentParser(
+        description="Generate XOR Dataset from configuration")
+    parser.add_argument(
+        '--config',
+        type=str,
+        required=True,
+        help='Path to configuration YAML file'
     )
-    save_data(data, args.output)
+    parser.add_argument(
+        '--log',
+        type=str,
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        default='INFO',
+        help='Set the logging level'
+    )
+    args = parser.parse_args()
+
+    # Configure logging
+    logging_level = getattr(logging, args.log.upper())
+    logging.basicConfig(
+        level=logging_level,
+        format='%(asctime)s [PID %(process)d] %(levelname)s: %(message)s'
+    )
+
+    # Load configuration
+    config = load_config(args.config)
+
+    # Print config values for debugging
+    print_config_values(config)
+    data_filepath = generate_data_from_config(args.config)
 
 
 if __name__ == "__main__":
