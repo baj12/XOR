@@ -1,0 +1,39 @@
+data:
+  class_distribution: 0.5
+  dataset_size: 10000
+  input_dim: 2
+experiment:
+  class_separation: 0.5
+  description: XOR experiment with 0 hidden layers
+  id: '0'
+  noise_dimensions: 0
+ga:
+  cxpb: 0.8
+  epochs: 20
+  max_time_per_ind: 300
+  mutpb: 0.2
+  n_processes: 4
+  ngen: 100
+  population_size: 100
+metrics:
+  tracking:
+    evaluation:
+      track_accuracy: true
+      track_loss: true
+      track_success_probability: true
+    model:
+      track_capacity_utilization: true
+      track_parameters: true
+    training:
+      track_convergence: true
+      track_memory: true
+      track_time: true
+model:
+  activation: relu
+  batch_size: 32
+  hidden_layers: []
+  input_dim: 2
+  lr: 0.001
+  neurons_per_layer: 2
+  optimizer: adam
+  skip_connections: null

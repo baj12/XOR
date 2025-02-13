@@ -11,7 +11,7 @@ there is some advanced logging going on that allows logging parallel processes
 
 commented codes allows changing tensorflow number of parallel processes and GPU usage
 
-record fitness was implemented during a search of a memory leak. 
+record fitness was implemented during a search of a memory leak.
 What might be better is a link to a SQL data base
 """
 
@@ -162,11 +162,18 @@ class GeneticAlgorithm:
         - y_val (np.ndarray): Validation labels.
         """
         self.config = config
+        self.metrics = {
+            'training_time': [],
+            'memory_usage': [],
+            'convergence': [],
+            'parameters': [],
+            'capacity_utilization': []
+        }
         self.X_train = X_train
         self.X_val = X_val
         self.y_train = y_train
         self.y_val = y_val
-        self.model = build_model(config)
+        self.model = build_model(config.model)
         self.total_weights = self.calculate_total_weights()
         self.setup_deap()
         self.pool = mp.Pool(processes=self.config.ga.n_processes)
@@ -505,8 +512,7 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
 
     try:
         # Build the model
-        model = build_model(config)
-
+        model = build_model(config.model)
         # Reshape individual to match model weights
         weight_shapes = [
             w.shape for layer in model.layers for w in layer.get_weights() if w.size > 0]
@@ -560,3 +566,20 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         logger.error(
             f"{pid} Error during individual evaluation: {e}", exc_info=True)
         return (0.0,)
+
+
+def evaluate_individual(self, individual):
+    """Evaluate individual with metric tracking."""
+    start_time = time.time()
+    memory_start = get_process_memory()
+
+    fitness = super().evaluate_individual(individual)
+
+    if self.config.metrics['tracking']['training']['track_time']:
+        self.metrics['training_time'].append(time.time() - start_time)
+
+    if self.config.metrics['tracking']['training']['track_memory']:
+        self.metrics['memory_usage'].append(
+            get_process_memory() - memory_start)
+
+    return fitness

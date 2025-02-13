@@ -13,10 +13,10 @@ from sklearn.model_selection import train_test_split
 from genetic_algorithm import GeneticAlgorithm, managed_pool
 from model import build_and_train_model
 from plotRawData import plot_train_test_with_decision_boundary
-from utils import (get_all_child_processes, kill_child_processes, load_config,
-                   load_results, plot_results, save_results,
-                   terminate_child_processes, validate_file,
-                   write_config_to_text)
+from utils import (Config, get_all_child_processes, kill_child_processes,
+                   load_config, load_results, managed_multiprocessing,
+                   plot_results, save_results, terminate_child_processes,
+                   validate_file, write_config_to_text)
 
 # logging.basicConfig(
 #     level=logging.DEBUG,  # Set to DEBUG to capture all levels of log messages
@@ -129,6 +129,40 @@ def cleanup_processes():
     logger.debug("Process cleanup completed.")
 
 
+def run_experiment(config: Config, data_file: str):
+    """Run experiment with given configuration."""
+    # Generate data with noise
+    data = generate_xor_data(
+        n_samples=config.data.dataset_size,
+        noise_dim=config.experiment.noise_dimensions,
+        class_separation=config.data.class_distribution
+    )
+
+    # Create experiment directory
+    experiment_dir = f"results/experiment_{config.experiment.id}"
+    os.makedirs(experiment_dir, exist_ok=True)
+
+    # Save experiment metadata
+    metadata = {
+        'config': config.to_dict(),
+        'timestamp': datetime.now().isoformat(),
+        'data_shape': data.shape
+    }
+    with open(f"{experiment_dir}/metadata.yaml", 'w') as f:
+        yaml.dump(metadata, f)
+
+    # Run genetic algorithm
+    ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
+    best_individual, logbook = ga.run()
+
+    # Save results
+    save_results(best_individual, logbook,
+                 f"{experiment_dir}/ga_results.pkl")
+
+    # Generate plots
+    plot_results(logbook, f"{experiment_dir}/plots")
+
+
 def main():
     """
     Main function to run the XOR project.
@@ -151,16 +185,22 @@ def main():
     # Configure logging based on the parsed arguments
     logger = configure_logging(args.log)
     logger.debug("Starting main function.")
+
     # **Convert Config object to dict**
     try:
         config = load_config(config_path)
-        config_dict = vars(config)  # or config.__dict__
-        config_dict['filepath'] = filepath
-        config_dict['config_path'] = config_path
-    except TypeError:
-        logger.error("Config object cannot be converted to a dictionary.")
+        config_dict = {
+            'experiment': vars(config.experiment),
+            'data': vars(config.data),
+            'ga': vars(config.ga),
+            'model': vars(config.model),
+            'metrics': config.metrics,
+            'filepath': filepath,
+            'config_path': config_path
+        }
+    except Exception as e:
+        logger.error(f"Error loading config: {str(e)}")
         sys.exit(1)
-
     # Write configuration parameters to a plain text file
     current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
     config_output_path = f"plots/config_parameters_{current_date}.txt"
@@ -283,5 +323,6 @@ def main():
 if __name__ == "__main__":
     # chatGPT suggests using 'spawn' method for macOS to avoid issues with TensorFlow/Keras
     # in the end future seems to be the best option
-    multiprocessing.set_start_method("spawn")
-    main()
+    with managed_multiprocessing():
+        multiprocessing.set_start_method("spawn")
+        main()

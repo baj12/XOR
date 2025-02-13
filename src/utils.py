@@ -1,18 +1,31 @@
 import json
 import logging
+import multiprocessing
 import os
 import pickle
 import sys
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def managed_multiprocessing():
+    try:
+        yield
+    finally:
+        # Clean up any remaining multiprocessing resources
+        for p in multiprocessing.active_children():
+            p.terminate()
+            p.join(timeout=1.0)
 
 
 @dataclass
@@ -28,39 +41,70 @@ class GAConfig:
 
 @dataclass
 class ModelConfig:
-    hidden_layers: list[int]  # List of neurons per hidden layer
+    hidden_layers: List[int]
+    neurons_per_layer: int
+    skip_connections: Optional[str]
     activation: str
     optimizer: str
     lr: float
     batch_size: int
+    input_dim: int = 2  # default to 2 for basic XOR
+
+
+@dataclass
+class ExperimentConfig:
+    id: str
+    description: str
+    noise_dimensions: int
+    class_separation: float
+
+
+@dataclass
+class DataConfig:
+    input_dim: int
+    class_distribution: float
+    dataset_size: int
+
+
+@dataclass
+class GAConfig:
+    population_size: int
+    cxpb: float
+    mutpb: float
+    ngen: int
+    n_processes: int
+    max_time_per_ind: float
+    epochs: int
 
 
 @dataclass
 class Config:
+    experiment: ExperimentConfig
+    data: DataConfig
     ga: GAConfig
     model: ModelConfig
-
-    def to_dict(self):
-        return json.loads(json.dumps(self, default=lambda o: o.__dict__))
+    metrics: dict
 
 
 def load_config(config_path: str) -> Config:
     """
     Load configuration from YAML file.
-
-    Parameters:
-    - config_path (str): Path to the YAML configuration file.
-
-    Returns:
-    - config (Config): Configuration object containing GA and model parameters.
     """
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
 
+    experiment_config = ExperimentConfig(**config_dict['experiment'])
+    data_config = DataConfig(**config_dict['data'])
     ga_config = GAConfig(**config_dict['ga'])
     model_config = ModelConfig(**config_dict['model'])
 
-    return Config(ga=ga_config, model=model_config)
+    return Config(
+        experiment=experiment_config,
+        data=data_config,
+        ga=ga_config,
+        model=model_config,
+        metrics=config_dict.get('metrics', {})
+    )
 
 
 def plot_results(logbook):
