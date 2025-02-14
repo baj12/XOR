@@ -50,43 +50,47 @@ def generate_parameter_combinations():
     experiment_id = 0
     combinations = []
 
-    for hidden_layers in HIDDEN_LAYERS_RANGE:
-        for neurons in NEURONS_RANGE:
-            params = {
-                'id': experiment_id,
-                'hidden_layers': hidden_layers,
-                'neurons': neurons,
-                'noise_dim': 0,  # Start with no noise
-                'separation': CLASS_SEPARATION['clear'],
-                'skip_connections': None,
-                'dataset_size': 10000,
-                'activation': MODEL_PARAMS['activation']
-            }
-            combinations.append(params)
-            experiment_id += 1
+    # Generate combinations
+    for noise_dim in NOISE_DIMENSIONS:
+        for hidden_layers in HIDDEN_LAYERS_RANGE:
+            for neurons in NEURONS_RANGE:
+                for sep_type, sep_value in CLASS_SEPARATION.items():
+                    for skip_connection in ARCHITECTURE_VARIANTS['skip_connections']:
+                        # Skip invalid combinations
+                        if hidden_layers == 0 and skip_connection is not None:
+                            continue
+
+                        params = {
+                            'id': experiment_id,
+                            'description': (f"XOR experiment with {noise_dim} noise dimensions, "
+                                            f"{hidden_layers} hidden layers"),
+                            'hidden_layers': hidden_layers,
+                            'neurons': neurons,
+                            'noise_dim': noise_dim,
+                            'separation': sep_value,
+                            'skip_connections': skip_connection,
+                            'dataset_size': 10000,
+                            # Base XOR (2) + noise dimensions
+                            'input_dim': 2 + noise_dim
+                        }
+
+                        combinations.append(params)
+                        experiment_id += 1
 
     return combinations
 
 
 def create_config(params):
-    """
-    Create a single configuration dictionary.
-
-    Args:
-        params (dict): Dictionary containing configuration parameters
-
-    Returns:
-        dict: Complete configuration dictionary
-    """
+    """Create a single configuration dictionary."""
     config = {
         'experiment': {
             'id': str(params['id']),
-            'description': f"XOR experiment with {params['hidden_layers']} hidden layers",
+            'description': params['description'],
             'noise_dimensions': params['noise_dim'],
             'class_separation': params['separation']
         },
         'data': {
-            'input_dim': 2,
+            'input_dim': params['input_dim'],  # Correctly set input dimensions
             'class_distribution': params['separation'],
             'dataset_size': params['dataset_size']
         },
@@ -99,7 +103,7 @@ def create_config(params):
             'optimizer': MODEL_PARAMS['optimizer'],
             'lr': MODEL_PARAMS['lr'],
             'batch_size': MODEL_PARAMS['batch_size'],
-            'input_dim': 2
+            'input_dim': params['input_dim']  # Match data input_dim
         },
         'metrics': METRICS_CONFIG
     }

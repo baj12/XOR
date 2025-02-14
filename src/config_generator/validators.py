@@ -37,24 +37,25 @@ def validate_metrics_params(params):
 
 def validate_config(config):
     """Validate the complete configuration."""
-    # Check required sections
-    required_sections = ['experiment', 'data', 'ga', 'model', 'metrics']
-    for section in required_sections:
-        if section not in config:
-            raise ValueError(f"Missing required section: {section}")
+    try:
+        # Check input dimensions match
+        if config['data']['input_dim'] != config['model']['input_dim']:
+            raise ValueError("Data and model input dimensions must match")
 
-    # Validate model config
-    if not isinstance(config['model']['hidden_layers'], list):
-        raise ValueError("hidden_layers must be a list")
-    if not isinstance(config['model']['neurons_per_layer'], int):
-        raise ValueError("neurons_per_layer must be an integer")
-    if config['model']['activation'] not in ['relu', 'tanh']:
-        raise ValueError("activation must be 'relu' or 'tanh'")
+        # Verify input dimensions account for noise
+        expected_input_dim = 2 + config['experiment']['noise_dimensions']
+        if config['data']['input_dim'] != expected_input_dim:
+            raise ValueError(f"Input dimension should be {expected_input_dim} "
+                             f"(2 + {config['experiment']['noise_dimensions']} noise dimensions)")
 
-    # Validate GA config
-    if not 0 <= config['ga']['cxpb'] <= 1:
-        raise ValueError("crossover probability must be between 0 and 1")
-    if not 0 <= config['ga']['mutpb'] <= 1:
-        raise ValueError("mutation probability must be between 0 and 1")
+        # Validate hidden layers and skip connections
+        if not config['model']['hidden_layers'] and config['model']['skip_connections']:
+            raise ValueError(
+                "Skip connections require at least one hidden layer")
 
-    return True
+        # Additional validations...
+
+        return True
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        return False

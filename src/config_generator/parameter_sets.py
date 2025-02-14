@@ -1,19 +1,21 @@
 # parameter_sets.py
 
 # Architecture parameters
-NOISE_DIMENSIONS = [0, 1, 2, 3, 4, 5, 10, 50, 100, 1000]
+NOISE_DIMENSIONS = [0, 1, 2, 5, 10, 20]  # Different levels of noise complexity
 CLASS_SEPARATION = {
-    'clear': 0.5,
-    'partial': 0.75,
-    'complete': 1.0
+    'clear': 0.5,      # Clear separation
+    'partial': 0.75,   # Some overlap
+    'complete': 1.0    # Maximum separation
 }
-HIDDEN_LAYERS_RANGE = [0, 1, 2, 3, 4, 5, 10, 20]
-NEURONS_RANGE = [2, 4, 8, 16, 32, 64]
+HIDDEN_LAYERS_RANGE = [0, 1, 2, 3, 4, 5]  # Number of hidden layers
+NEURONS_RANGE = [2, 4, 8, 16, 32, 64]     # Neurons per layer
+
+# Model architecture variants
 ARCHITECTURE_VARIANTS = {
     'skip_connections': [None, 'residual', 'dense']
 }
 
-# GA parameters as single values, not lists
+# GA parameters (single values for consistency)
 GA_PARAMS = {
     'population_size': 100,
     'cxpb': 0.8,
@@ -24,7 +26,7 @@ GA_PARAMS = {
     'epochs': 20
 }
 
-# Model parameters as single values, not lists
+# Model parameters (single values for focused comparison)
 MODEL_PARAMS = {
     'activation': 'relu',
     'optimizer': 'adam',
@@ -32,6 +34,7 @@ MODEL_PARAMS = {
     'batch_size': 32
 }
 
+# Metrics configuration
 METRICS_CONFIG = {
     'tracking': {
         'training': {

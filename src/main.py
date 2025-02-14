@@ -2,7 +2,7 @@
 
 import argparse
 import logging
-import multiprocessing
+import multiprocessing as mp
 import os
 import signal  # Add this import
 import sys
@@ -17,9 +17,10 @@ from genetic_algorithm import GeneticAlgorithm, managed_pool
 from model import build_and_train_model
 from plotRawData import plot_train_test_with_decision_boundary
 from utils import (Config, cleanup_processes, configure_logging,
-                   get_all_child_processes, kill_child_processes, load_config,
-                   load_results, managed_multiprocessing, plot_results,
-                   save_results, terminate_child_processes, validate_file,
+                   get_all_child_processes, get_output_dirs,
+                   kill_child_processes, load_config, load_results,
+                   managed_multiprocessing, plot_results, save_results,
+                   terminate_child_processes, validate_file,
                    write_config_to_text)
 
 # Setup logger
@@ -120,6 +121,9 @@ def main():
     args = parse_arguments()
     configure_logging(args.log)
     logger.debug("Starting main function.")
+    config_name = os.path.basename(args.config).replace('.yaml', '')
+    # Get standardized directory structure
+    dirs = get_output_dirs(config_name)
 
     try:
         # Load configuration
@@ -153,7 +157,8 @@ def main():
 
         # Write configuration parameters to a plain text file
         current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
-        config_output_path = f"plots/config_parameters_{current_date}.txt"
+        # config_output_path = f"plots/config_parameters_{current_date}.txt"
+        config_output_path = f"{dirs['configs']}/parameters_{current_date}.txt"
         os.makedirs(os.path.dirname(config_output_path), exist_ok=True)
         try:
             write_config_to_text(config_dict, config_output_path)
@@ -170,6 +175,9 @@ def main():
             X, y, test_size=0.2, random_state=42
         )
 
+        logger.info("TensorFlow GPU support: %s", tf.test.is_built_with_cuda())
+        logger.info("TensorFlow GPU available: %s",
+                    tf.config.list_physical_devices('GPU'))
         # Run genetic algorithm
         try:
             ga = GeneticAlgorithm(config, X_train, X_test, Y_train, Y_test)
@@ -191,8 +199,10 @@ def main():
 
 
 if __name__ == "__main__":
-    # chatGPT suggests using 'spawn' method for macOS to avoid issues with TensorFlow/Keras
-    # in the end future seems to be the best option
-    with managed_multiprocessing():
-        multiprocessing.set_start_method("spawn")
+    try:
+        mp.set_start_method('spawn', force=True)
         main()
+    except Exception as e:
+        logger.error(f"Error in main execution: {e}")
+    finally:
+        cleanup_processes()

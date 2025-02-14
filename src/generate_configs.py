@@ -5,15 +5,19 @@ from itertools import product
 
 import yaml
 
+# Different numbers of noise dimensions to test
+NOISE_DIMENSIONS = [0, 1, 2, 5, 10, 20]
+
 
 def create_config(hidden_layers, neurons_per_layer, ga_params, model_params, output_dir):
     """Create a single configuration dictionary."""
+    """Create a single configuration dictionary."""
     config = {
         'experiment': {
-            'id': str(uuid.uuid4())[:8],
-            'description': f"XOR experiment with {hidden_layers} hidden layers",
-            'noise_dimensions': 0,
-            'class_separation': 0.5
+            'id': str(params['id']),
+            'description': f"XOR experiment with {params['noise_dimensions']} noise dimensions",
+            'noise_dimensions': params['noise_dimensions'],
+            'class_separation': params['separation']
         },
         'data': {
             'input_dim': 2,

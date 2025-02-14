@@ -26,20 +26,22 @@ logging.basicConfig(
 )
 
 
-def generate_xor_data(n_samples=10000, noise_std=0.5, ratio_classes=1.0, random_state=None):
+def generate_xor_data(n_samples=10000, noise_std=0.5, ratio_classes=1.0, noise_dimensions=0, random_state=None):
     """
-    Generate XOR dataset.
+    Generate XOR dataset with optional noise dimensions.
 
     Args:
         n_samples (int): Exact number of samples to generate
-        noise_std (float): Standard deviation of noise to add
+        noise_std (float): Standard deviation of noise to add to XOR coordinates
         ratio_classes (float): Ratio between classes
+        noise_dimensions (int): Number of additional random dimensions to add
         random_state (int): Random seed for reproducibility
     """
     logger.debug(f"Generating XOR data with parameters:")
     logger.debug(f"  n_samples: {n_samples}")
     logger.debug(f"  noise_std: {noise_std}")
     logger.debug(f"  ratio_classes: {ratio_classes}")
+    logger.debug(f"  noise_dimensions: {noise_dimensions}")
     logger.debug(f"  random_state: {random_state}")
 
     if random_state is not None:
@@ -88,11 +90,23 @@ def generate_xor_data(n_samples=10000, noise_std=0.5, ratio_classes=1.0, random_
     X = np.array(X)
     y = np.array(y)
 
+    # Add noise dimensions if specified
+    if noise_dimensions > 0:
+        noise_features = np.random.normal(0, 1, (n_samples, noise_dimensions))
+        X = np.hstack([X, noise_features])
+
+        # Update column names to include noise dimensions
+        columns = ['x', 'y'] + \
+            [f'noise_{i+1}' for i in range(noise_dimensions)]
+    else:
+        columns = ['x', 'y']
+
     # Create DataFrame
-    df = pd.DataFrame(X, columns=['x', 'y'])
+    df = pd.DataFrame(X, columns=columns)
     df['label'] = y.astype(int)
 
-    logger.debug(f"Generated dataset with {len(df)} samples")
+    logger.debug(
+        f"Generated dataset with {len(df)} samples and {len(df.columns)-1} features")
 
     return df
 
@@ -192,9 +206,9 @@ def generate_data_from_config(config_path: str):
     logger.info("Generating new data from configuration")
     data = generate_xor_data(
         n_samples=config.data.dataset_size,
-        noise_std=config.experiment.noise_dimensions,  # This is 0 in your YAML
-        # Use class_separation instead of class_distribution
+        noise_std=0.5,  # Fixed noise for XOR coordinates
         ratio_classes=config.experiment.class_separation,
+        noise_dimensions=config.experiment.noise_dimensions,  # Add noise dimensions
         random_state=42
     )
 
@@ -216,7 +230,16 @@ def print_config_values(config: Config):
 
 
 def validate_existing_data(data: pd.DataFrame, config: Config) -> bool:
-    """Validate that existing data matches configuration requirements."""
+    """
+    Validate that existing data matches configuration requirements.
+
+    Args:
+        data (pd.DataFrame): Existing data
+        config (Config): Configuration object
+
+    Returns:
+        bool: True if data is valid, False otherwise
+    """
     try:
         # Check number of samples
         if len(data) != config.data.dataset_size:
@@ -226,17 +249,35 @@ def validate_existing_data(data: pd.DataFrame, config: Config) -> bool:
             )
             return False
 
+        # Calculate expected number of columns
+        expected_columns = ['x', 'y']
+        if config.experiment.noise_dimensions > 0:
+            expected_columns.extend(
+                [f'noise_{i+1}' for i in range(config.experiment.noise_dimensions)])
+        expected_columns.append('label')
+
         # Check columns
-        required_columns = {'x', 'y', 'label'}
-        if not required_columns.issubset(data.columns):
+        if list(data.columns) != expected_columns:
             logger.warning(
-                f"Missing required columns: {required_columns - set(data.columns)}"
+                f"Column mismatch:\n"
+                f"Expected columns: {expected_columns}\n"
+                f"Found columns: {list(data.columns)}"
             )
+            return False
+
+        # Check data types
+        if not all(data[col].dtype == np.float64 for col in data.columns if col != 'label'):
+            logger.warning("Non-label columns must be float64")
+            return False
+
+        if data['label'].dtype != np.int64:
+            logger.warning("Label column must be int64")
             return False
 
         logger.debug("Data validation successful:")
         logger.debug(f"  Samples: {len(data)}")
         logger.debug(f"  Columns: {list(data.columns)}")
+        logger.debug(f"  Data types: {data.dtypes}")
         return True
 
     except Exception as e:

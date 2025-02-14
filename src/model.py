@@ -47,41 +47,44 @@ def build_model(config: ModelConfig):
     Returns:
     - tf.keras.Model: Compiled Keras model
     """
-    inputs = Input(shape=(config.input_dim,))
-    x = inputs
+    tf.keras.backend.clear_session()  # Clear any existing session
 
-    # Add hidden layers
-    previous_layers = []
-    for i, units in enumerate(config.hidden_layers):
-        x = Dense(
-            units=units,
-            activation=config.activation,
-            name=f'dense_{i}'
-        )(x)
-        previous_layers.append(x)
+    with tf.keras.utils.CustomObjectScope({}):  # Create a clean scope
+        inputs = Input(shape=(config.input_dim,))
+        x = inputs
 
-        # Add skip connections if specified
-        if config.skip_connections:
-            if config.skip_connections == 'residual' and i > 0:
-                x = Add()([x, previous_layers[-2]])
-            elif config.skip_connections == 'dense' and i > 0:
-                x = Concatenate()([x] + previous_layers[:-1])
+        # Add hidden layers
+        previous_layers = []
+        for i, units in enumerate(config.hidden_layers):
+            x = Dense(
+                units=units,
+                activation=config.activation,
+                name=f'dense_{i}'
+            )(x)
+            previous_layers.append(x)
 
-    # Output layer
-    outputs = Dense(1, activation='sigmoid', name='output')(x)
+            # Add skip connections if specified
+            if config.skip_connections:
+                if config.skip_connections == 'residual' and i > 0:
+                    x = Add()([x, previous_layers[-2]])
+                elif config.skip_connections == 'dense' and i > 0:
+                    x = Concatenate()([x] + previous_layers[:-1])
 
-    # Create model
-    model = Model(inputs=inputs, outputs=outputs)
+        # Output layer
+        outputs = Dense(1, activation='sigmoid', name='output')(x)
 
-    # Compile model
-    optimizer = get_optimizer(config.optimizer, config.lr)
-    model.compile(
-        optimizer=optimizer,
-        loss='binary_crossentropy',
-        metrics=['accuracy']
-    )
+        # Create model
+        model = Model(inputs=inputs, outputs=outputs)
 
-    return model
+        # Compile model
+        optimizer = get_optimizer(config.optimizer, config.lr)
+        model.compile(
+            optimizer=optimizer,
+            loss='binary_crossentropy',
+            metrics=['accuracy']
+        )
+
+        return model
 
 
 class CustomDebugCallback(tf.keras.callbacks.Callback):
@@ -96,9 +99,7 @@ class CustomDebugCallback(tf.keras.callbacks.Callback):
 
 def build_and_train_model(initial_weights, df, config: Config,
                           X_train, X_val, y_train, y_val,
-                          model_save_path='models/best_model.keras',
-                          plot_accuracy_path='plots/accuracy.png',
-                          plot_loss_path='plots/loss.png'):
+                          dirs):
     """
     Build and train a model using the provided configuration and data.
 
@@ -118,6 +119,10 @@ def build_and_train_model(initial_weights, df, config: Config,
     # Set up directories
     for path in [model_save_path, plot_accuracy_path, plot_loss_path]:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+    model_save_path = f"{dirs['models']}/model_{timestamp}.keras"
+    plot_accuracy_path = f"{dirs['plots']}/accuracy_{timestamp}.png"
+    plot_loss_path = f"{dirs['plots']}/loss_{timestamp}.png"
 
     # Build model
     model = build_model(config.model)

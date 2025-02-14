@@ -74,6 +74,21 @@ tf.config.threading.set_inter_op_parallelism_threads(
 # tf.config.set_visible_devices([], 'GPU')
 
 
+def log_gpu_usage():
+    """Log GPU usage information."""
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                # Get GPU memory info
+                memory_info = tf.config.experimental.get_memory_info(gpu.name)
+                logger.debug(f"GPU {gpu.name} memory usage: {memory_info}")
+        except:
+            logger.debug("Could not get GPU memory info")
+    else:
+        logger.warning("No GPU devices available")
+
+
 def handler(signum, frame):
     """
     Signal handler to raise a TimeoutError when GA execution exceeds the allowed time.
@@ -98,22 +113,30 @@ fitness_counter = 0
 
 @contextmanager
 def managed_pool(max_workers):
-    """
-    Context manager to handle multiprocessing pool with proper initialization and cleanup.
-    used with futures to handle timeouts
-
-    Args:
-        processes (int): Number of worker processes.
-
-    Yields:
-        mp.Pool: A multiprocessing pool.
-    """
+    """Improved process pool management with proper resource cleanup"""
+    ctx = mp.get_context('spawn')  # Use spawn context explicitly
     executor = ProcessPoolExecutor(
-        max_workers=max_workers, initializer=init_worker_logging)
+        max_workers=max_workers,
+        initializer=init_worker,
+        mp_context=ctx
+    )
+
     try:
         yield executor
     finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+        # Graceful shutdown sequence
+        executor.shutdown(wait=True, cancel_futures=True)
+
+        # Clean up any remaining processes
+        for child in mp.active_children():
+            try:
+                child.terminate()
+                child.join(timeout=1.0)
+            except Exception as e:
+                logger.debug(f"Error cleaning up child process: {e}")
+
+        # Clear TensorFlow session
+        tf.keras.backend.clear_session()
 
 
 @contextlib.contextmanager
@@ -132,6 +155,8 @@ def timeout_context(seconds):
 
 def evaluate_population(self, population):
     """Evaluate all individuals in the population using ProcessPoolExecutor."""
+    log_gpu_usage()  # Log before evaluation
+
     eval_data = [(ind, self.config, self.X_train, self.X_test,
                   self.y_train, self.y_test) for ind in population]
 
@@ -157,7 +182,27 @@ def evaluate_population(self, population):
     for ind, fit in results:
         ind.fitness.values = fit
 
+    log_gpu_usage()  # Log after evaluation
+
     return population
+
+
+def init_worker():
+    """Initialize worker process."""
+    tf.keras.backend.clear_session()
+    # Allow GPU but limit memory growth to prevent memory conflicts
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            # Optionally, limit GPU memory per process
+            # tf.config.set_logical_device_configuration(
+            #     gpus[0],
+            #     [tf.config.LogicalDeviceConfiguration(memory_limit=1024)]  # 1GB limit
+            # )
+        except RuntimeError as e:
+            logger.warning(f"GPU configuration failed: {e}")
 
 
 def init_worker_logging():
@@ -225,6 +270,8 @@ class GeneticAlgorithm:
         self.toolbox.register("map", self.pool.map)
         self.fitness_history = []  # To store fitness of all individuals per generation
         self.counters = defaultdict(int)
+        self.pool = None
+        self.processes = []
 
     def calculate_total_weights(self) -> int:
         """
@@ -241,6 +288,24 @@ class GeneticAlgorithm:
                 for w in weights:
                     total_weights += w.size
         return total_weights
+
+    def cleanup(self):
+        """Cleanup method for GA resources"""
+        if self.pool:
+            self.pool.shutdown(wait=True, cancel_futures=True)
+
+        for process in self.processes:
+            try:
+                process.terminate()
+                process.join(timeout=0.5)
+            except Exception as e:
+                logger.debug(f"Error cleaning up GA process: {e}")
+
+        tf.keras.backend.clear_session()
+
+    def __del__(self):
+        """Destructor to ensure cleanup"""
+        self.cleanup()
 
     def setup_deap(self):
         """
@@ -525,7 +590,24 @@ class GeneticAlgorithm:
         return best_individual, master_logbook
 
 
+def save_results(self, best_individual, logbook, dirs):
+    """
+    Save GA results using standardized directory structure
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_path = f"{dirs['results']}/ga_results_{timestamp}.pkl"
+
+    with open(results_path, 'wb') as f:
+        pickle.dump({
+            'best_individual': best_individual,
+            'logbook': logbook,
+            'config_name': self.config_name,
+            'timestamp': timestamp
+        }, f)
+
 # @profile
+
+
 def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
     """
     Evaluate an individual's fitness based on validation accuracy.
@@ -554,10 +636,12 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
     if (individual.fitness.valid):
         logger.debug(f"Individual already evaluated. Skipping.")
         return individual.fitness.values
-
     try:
-        # Build the model
+        tf.keras.backend.clear_session()  # Clear session at start
+
+        # with tf.device('/cpu:0'):  # Force CPU usage to avoid GPU conflicts
         model = build_model(config.model)
+
         # Reshape individual to match model weights
         weight_shapes = [
             w.shape for layer in model.layers for w in layer.get_weights() if w.size > 0]
@@ -611,6 +695,8 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
         logger.error(
             f"{pid} Error during individual evaluation: {e}", exc_info=True)
         return (0.0,)
+    finally:
+        tf.keras.backend.clear_session()  # Ensure cleanup
 
 
 def evaluate_individual(self, individual):

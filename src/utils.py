@@ -1,6 +1,6 @@
 import json
 import logging
-import multiprocessing
+import multiprocessing as mp
 import os
 import pickle
 import sys
@@ -89,46 +89,63 @@ class Config:
     model: ModelConfig
     metrics: dict
 
+# Add to utils.py
+
+
+def get_output_dirs(config_name):
+    """
+    Creates and returns standardized output directory structure.
+
+    Args:
+        config_name (str): Name of the configuration file (without extension)
+
+    Returns:
+        dict: Dictionary containing paths for different outputs
+    """
+    base_dir = f"experiments/{config_name}"
+    dirs = {
+        'models': f"{base_dir}/models",
+        'plots': f"{base_dir}/plots",
+        'results': f"{base_dir}/results",
+        'logs': f"{base_dir}/logs",
+        'configs': f"{base_dir}/configs"
+    }
+
+    # Create all directories
+    for dir_path in dirs.values():
+        os.makedirs(dir_path, exist_ok=True)
+
+    return dirs
+
 
 def cleanup_processes():
-    """Cleanup any remaining processes."""
+    """Enhanced process cleanup with resource tracking"""
     logger.debug("Initiating process cleanup.")
 
-    import psutil
-    current_process = psutil.Process()
-    children = current_process.children(recursive=True)
+    # Clean up TensorFlow
+    tf.keras.backend.clear_session()
 
-    for child in children:
+    # Clean up multiprocessing resources
+    active_children = mp.active_children()
+    for child in active_children:
         try:
             logger.debug(f"Terminating process: {child.pid}")
             child.terminate()
-        except psutil.NoSuchProcess:
-            logger.debug(f"Process {child.pid} no longer exists")
-            pass
+            child.join(timeout=0.5)
+
+            # Force kill if still alive
+            if child.is_alive():
+                logger.debug(f"Force killing process: {child.pid}")
+                child.kill()
+                child.join(timeout=0.5)
         except Exception as e:
-            logger.error(f"Error terminating process {child.pid}: {e}")
+            logger.debug(f"Error during process cleanup: {e}")
 
-    # Wait for processes to terminate
-    gone, alive = psutil.wait_procs(children, timeout=3)
-
-    # Force kill any remaining processes
-    for p in alive:
-        try:
-            logger.debug(f"Force killing process: {p.pid}")
-            p.kill()
-        except psutil.NoSuchProcess:
-            pass
-        except Exception as e:
-            logger.error(f"Error killing process {p.pid}: {e}")
-
-    # Clear any TensorFlow sessions
+    # Reset multiprocessing start method
     try:
-        tf.keras.backend.clear_session()
-        logger.debug("TensorFlow session cleared")
-    except Exception as e:
-        logger.error(f"Error clearing TensorFlow session: {e}")
-
-    logger.debug("Process cleanup completed.")
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
 
 
 def configure_logging(log_level=None):
