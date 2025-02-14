@@ -107,138 +107,93 @@ def plot_final_evaluation(df, predictions, save_path='plots/final_evaluation.png
     logger.info(f"Final evaluation plot saved as '{save_path}'.")
 
 
-def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_test, save_path='plots/train_test_decision_boundary.png'):
+def plot_train_test_with_decision_boundary(model, X_train, X_test, y_train, y_test, df=None, config=None, save_path='plots/train_test_decision_boundary.png'):
     """
-    Plots training and testing data colored by class with decision boundaries on an A4 landscape sheet.
-    Differentiates correctly classified and misclassified data points using different markers.
-
-    Parameters:
-    - model: Trained Keras model with a predict method.
-    - X_train (np.ndarray): Training feature data.
-    - X_test (np.ndarray): Testing feature data.
-    - y_train (np.ndarray): Training labels.
-    - y_test (np.ndarray): Testing labels.
-    - save_path (str): Path to save the plot (determines format based on file extension).
+    Creates two separate plots: one for training data and one for test data with decision boundaries.
     """
+    # Create mesh grid for the base features (x, y)
+    x_min = min(X_train[:, 0].min(), X_test[:, 0].min()) - 1
+    x_max = max(X_train[:, 0].max(), X_test[:, 0].max()) + 1
+    y_min = min(X_train[:, 1].min(), X_test[:, 1].min()) - 1
+    y_max = max(X_train[:, 1].max(), X_test[:, 1].max()) + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.02),
+                         np.arange(y_min, y_max, 0.02))
 
-    colormap = 'plasma'
+    # If we have noise dimensions, prepare noise values for prediction
+    if config and config.experiment.noise_dimensions > 0:
+        mesh_points = np.c_[xx.ravel(), yy.ravel()]
+        noise_cols = [
+            f'noise_{i+1}' for i in range(config.experiment.noise_dimensions)]
+        noise_means = df[noise_cols].mean().values
+        noise_array = np.tile(noise_means, (len(mesh_points), 1))
+        mesh_points = np.column_stack([mesh_points, noise_array])
+    else:
+        mesh_points = np.c_[xx.ravel(), yy.ravel()]
 
-    # Set plot style
-    try:
-        plt.style.use('ggplot')
-    except:
-        logger.error(
-            "Warning: 'ggplot' style not available. Using default style.")
-    sns.set_palette("deep")
+    # Predict
+    Z = model.predict(mesh_points)
+    Z = Z.reshape(xx.shape)
 
-    # Create A4 landscape figure
-    # A4 landscape size in inches
-    fig, axes = plt.subplots(1, 2, figsize=(11.7, 8.3))
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
 
-    # Define titles with current date
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    fig.suptitle(
-        f'Training and Testing Data with Decision Boundary\n{current_date}', fontsize=16)
+    # Plot Training Data
+    contour1 = ax1.contourf(xx, yy, Z, alpha=0.4, cmap='viridis')
+    scatter1 = ax1.scatter(X_train[:, 0], X_train[:, 1],
+                           c=y_train, cmap='viridis',
+                           marker='o', alpha=0.6)
+    ax1.set_xlabel('X')
+    ax1.set_ylabel('Y')
+    ax1.set_title('Training Data with Decision Boundary')
+    fig.colorbar(contour1, ax=ax1)
 
-    # Define markers for correct and misclassified points
-    markers = {True: 'o', False: 'X'}  # 'o' for correct, 'X' for misclassified
-    marker_labels = {True: 'Correctly Classified', False: 'Misclassified'}
+    # Plot Test Data
+    contour2 = ax2.contourf(xx, yy, Z, alpha=0.4, cmap='viridis')
+    scatter2 = ax2.scatter(X_test[:, 0], X_test[:, 1],
+                           c=y_test, cmap='viridis',
+                           marker='s', alpha=0.6)
+    ax2.set_xlabel('X')
+    ax2.set_ylabel('Y')
+    ax2.set_title('Test Data with Decision Boundary')
+    fig.colorbar(contour2, ax=ax2)
 
-    for ax, data, labels, data_type in zip(
-        axes,
-        [X_train, X_test],
-        [y_train, y_test],
-        ['Training', 'Testing']
-    ):
-        # Predict classes for the current dataset
-        predictions = (model.predict(data) > 0.5).astype(int).reshape(-1)
-        correctness = predictions == labels
+    # Add overall title
+    fig.suptitle('Model Decision Boundaries', fontsize=16, y=1.05)
 
-        # Separate correct and misclassified points
-        correct_data = data[correctness]
-        correct_labels = labels[correctness]
-        misclassified_data = data[~correctness]
-        misclassified_labels = labels[~correctness]
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
 
-        # Scatter plot for correctly classified points
-        scatter_correct = ax.scatter(
-            correct_data[:, 0],
-            correct_data[:, 1],
-            c=correct_labels,
-            cmap=colormap,
-            marker=markers[True],
-            alpha=0.7,
-            edgecolors='w',
-            linewidth=0.5,
-            label='Correctly Classified'
-        )
-
-        # Scatter plot for misclassified points
-        scatter_misclassified = ax.scatter(
-            misclassified_data[:, 0],
-            misclassified_data[:, 1],
-            c=misclassified_labels,
-            cmap=colormap,
-            marker=markers[False],
-            alpha=0.7,
-            edgecolors='k',
-            linewidth=0.5,
-            label='Misclassified'
-        )
-
-        # Create mesh grid for decision boundary
-        x_min, x_max = data[:, 0].min() - 1, data[:, 0].max() + 1
-        y_min, y_max = data[:, 1].min() - 1, data[:, 1].max() + 1
-        xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.02),
-                             np.arange(y_min, y_max, 0.02))
-        grid = np.c_[xx.ravel(), yy.ravel()]
-
-        # Predict classes for each point in the grid
-        Z = model.predict(grid)
-        Z = (Z > 0.5).astype(int).reshape(xx.shape)
-
-        # Plot decision boundary
-        ax.contourf(xx, yy, Z, alpha=0.2, cmap=colormap)
-
-        # Set labels and title
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_title(f'{data_type} Data')
-
-    # Create a combined legend
-    handles_correct, labels_correct = scatter_correct.legend_elements(
-        prop="colors")
-    handles_misclassified, labels_misclassified = scatter_misclassified.legend_elements(
-        prop="colors")
-
-    # Create custom legend handles for correctness
-    custom_handles = [
-        Line2D([0], [0], marker=markers[True], color='w', label='Correctly Classified',
-               markerfacecolor='gray', markersize=10, markeredgecolor='w'),
-        Line2D([0], [0], marker=markers[False], color='w', label='Misclassified',
-               markerfacecolor='gray', markersize=10, markeredgecolor='k')
-    ]
-
-    # Add class legends
-    class_unique = np.unique(y_train)
-    class_colors = [plt.cm.plasma(
-        i / float(len(class_unique)-1)) for i in class_unique]
-    class_handles = [plt.Line2D([0], [0], marker='o', color='w', label=f'Class {cls}',
-                                markerfacecolor=color, markersize=10) for cls, color in zip(class_unique, class_colors)]
-
-    # Combine all legends
-    first_legend = ax.legend(handles=class_handles,
-                             title="Classes", loc='upper right')
-    second_legend = ax.add_artist(plt.legend(custom_handles, [h.get_label() for h in custom_handles],
-                                             title="Classification", loc='lower right'))
-
-    # Adjust layout to make room for the suptitle
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    # Save the plots
+    base_path = os.path.splitext(save_path)[0]
+    plt.savefig(f"{base_path}.png", bbox_inches='tight', dpi=300)
     plt.close()
-    logger.info(
-        f"Train and Test plots with decision boundary saved as '{save_path}'.")
+
+    # Also create separate files for training and test plots
+    # Training plot
+    plt.figure(figsize=(10, 8))
+    plt.contourf(xx, yy, Z, alpha=0.4, cmap='viridis')
+    plt.scatter(X_train[:, 0], X_train[:, 1],
+                c=y_train, cmap='viridis',
+                marker='o', alpha=0.6)
+    plt.colorbar()
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('Training Data with Decision Boundary')
+    plt.savefig(f"{base_path}_train.png", bbox_inches='tight', dpi=300)
+    plt.close()
+
+    # Test plot
+    plt.figure(figsize=(10, 8))
+    plt.contourf(xx, yy, Z, alpha=0.4, cmap='viridis')
+    plt.scatter(X_test[:, 0], X_test[:, 1],
+                c=y_test, cmap='viridis',
+                marker='s', alpha=0.6)
+    plt.colorbar()
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('Test Data with Decision Boundary')
+    plt.savefig(f"{base_path}_test.png", bbox_inches='tight', dpi=300)
+    plt.close()
 
 
 def plot_with_model_file(model_path, X_train, X_test, y_train, y_test, save_path='plots/train_test_decision_boundary.pdf'):

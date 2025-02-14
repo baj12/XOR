@@ -1,23 +1,28 @@
 # main.py
 
 import argparse
+import concurrent.futures
 import logging
 import multiprocessing as mp
 import os
+import pickle
+import random
 import signal  # Add this import
 import sys
 from datetime import datetime
 
+import numpy as np
 import psutil
 import tensorflow as tf
 import yaml
+from deap import base, creator, tools
 from sklearn.model_selection import train_test_split
 
 from genetic_algorithm import GeneticAlgorithm, managed_pool
-from model import build_and_train_model
+from model import build_and_train_model, build_model
 from plotRawData import plot_train_test_with_decision_boundary
-from utils import (Config, cleanup_processes, configure_logging,
-                   get_all_child_processes, get_output_dirs,
+from utils import (Config, ExperimentPaths, cleanup_processes,
+                   configure_logging, get_all_child_processes, get_output_dirs,
                    kill_child_processes, load_config, load_results,
                    managed_multiprocessing, plot_results, save_results,
                    terminate_child_processes, validate_file,
@@ -83,8 +88,8 @@ def parse_arguments():
     return parser.parse_args()
 
 
+"""
 def run_experiment(config: Config, data_file: str):
-    """Run experiment with given configuration."""
     # Generate data with noise
     data = generate_xor_data(
         n_samples=config.data.dataset_size,
@@ -106,7 +111,7 @@ def run_experiment(config: Config, data_file: str):
         yaml.dump(metadata, f)
 
     # Run genetic algorithm
-    ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val)
+    ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val, paths=paths)
     best_individual, logbook = ga.run()
 
     # Save results
@@ -115,15 +120,19 @@ def run_experiment(config: Config, data_file: str):
 
     # Generate plots
     plot_results(logbook, f"{experiment_dir}/plots")
+"""
 
 
 def main():
     args = parse_arguments()
-    configure_logging(args.log)
+    # configure_logging(args.log)
     logger.debug("Starting main function.")
     config_name = os.path.basename(args.config).replace('.yaml', '')
     # Get standardized directory structure
-    dirs = get_output_dirs(config_name)
+    # dirs = get_output_dirs(config_name)
+    # Create paths object
+    paths = ExperimentPaths(config_name)
+    configure_logging(args.log, log_path=f"{paths.logs}/experiment.log")
 
     try:
         # Load configuration
@@ -148,7 +157,7 @@ def main():
 
         # Load and validate data
         try:
-            df = validate_file(expected_data_file)
+            df = validate_file(expected_data_file, config)
             logger.debug(
                 f"Successfully validated the input file: '{expected_data_file}'")
         except ValueError as ve:
@@ -158,12 +167,10 @@ def main():
         # Write configuration parameters to a plain text file
         current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
         # config_output_path = f"plots/config_parameters_{current_date}.txt"
-        config_output_path = f"{dirs['configs']}/parameters_{current_date}.txt"
+        config_output_path = f"{paths.config}/parameters.txt"
         os.makedirs(os.path.dirname(config_output_path), exist_ok=True)
         try:
             write_config_to_text(config_dict, config_output_path)
-            logger.debug(
-                f"Configuration parameters written to {config_output_path}.")
         except Exception as e:
             logger.error(f"Failed to write configuration to text file: {e}")
             sys.exit(1)
@@ -180,15 +187,15 @@ def main():
                     tf.config.list_physical_devices('GPU'))
         # Run genetic algorithm
         try:
-            ga = GeneticAlgorithm(config, X_train, X_test, Y_train, Y_test)
+            ga = GeneticAlgorithm(config, X_train, X_test,
+                                  Y_train, Y_test, df=df,  paths=paths)
             best_individual, logbook = ga.run()
             logger.debug("Genetic Algorithm completed successfully.")
         except Exception as e:
-            logger.error(f"Error during Genetic Algorithm execution: {e}")
+            logger.error(
+                f"Error during Genetic Algorithm execution: {e}", exc_info=True)
             cleanup_processes()
             sys.exit(1)
-
-        # Rest of your code...
 
     except Exception as e:
         logger.error(f"Error in main: {e}")

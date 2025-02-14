@@ -59,8 +59,9 @@ from tensorflow.keras.backend import clear_session
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Sequential  # Added for model manipulation
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
-from utils import Config, get_total_size
 from model import build_model, get_optimizer
+from utils import Config, get_total_size, save_model_and_history
+from plotRawData import plot_train_test_with_decision_boundary
 
 
 tf.config.threading.set_intra_op_parallelism_threads(
@@ -153,38 +154,72 @@ def timeout_context(seconds):
         signal.alarm(0)
 
 
-def evaluate_population(self, population):
-    """Evaluate all individuals in the population using ProcessPoolExecutor."""
-    log_gpu_usage()  # Log before evaluation
+def evaluate_population(self, population, timeout=60):
+    """
+    Evaluate all individuals in the population with timeout protection.
+    """
+    pid = os.getpid()
+    logger.debug(f"pop created.")
 
-    eval_data = [(ind, self.config, self.X_train, self.X_test,
-                  self.y_train, self.y_test) for ind in population]
+    try:
+        with managed_pool(max_workers=self.config.ga.n_processes) as executor:
+            # Setup future parallel execution with per individual time-out
+            futures = {
+                executor.submit(
+                    eval_individual,
+                    individual=ind,
+                    config=self.config,
+                    X_train=self.X_train,
+                    X_val=self.X_val,
+                    y_train=self.y_train,
+                    y_val=self.y_val,
+                    df=self.df
+                ): ind for ind in population
+            }
+            logger.debug(f"futures created.")
 
-    results = []
-    timeout = self.config.ga.max_time_per_ind
+            count = 0
+            results = []
 
-    with ProcessPoolExecutor(max_workers=self.config.ga.n_processes) as executor:
-        futures = {executor.submit(eval_individual, data): data[0]
-                   for data in eval_data}
-
-        for future in futures:
-            individual = futures[future]
             try:
-                with timeout_context(timeout):
-                    fitness = future.result(timeout=timeout)
-                results.append((individual, fitness))
-            except (TimeoutError, Exception) as e:
-                logger.warning(f"Evaluation timed out or failed: {str(e)}")
-                results.append((individual, (0.0,)))
-                future.cancel()
+                for future in as_completed(futures, timeout=timeout+1):
+                    count += 1
+                    # Get the individual associated with this future
+                    ind = futures[future]
+                    try:
+                        fitness = future.result(timeout=timeout)
+                        ind.fitness.values = fitness  # Assign fitness to the individual
+                        results.append((ind, fitness))
+                        logger.debug(f"future. {count}")
+                        logger.debug(f"future results {count}: {fitness}")
+                    except TimeoutError:
+                        logger.warning(
+                            f"Evaluation timeout for individual {count}")
+                        # Assign worst fitness on timeout
+                        ind.fitness.values = (0.0,)
+                    except Exception as e:
+                        logger.error(
+                            f"Error evaluating individual {count}: {e}")
+                        # Assign worst fitness on error
+                        ind.fitness.values = (0.0,)
 
-    # Assign fitnesses back to individuals
-    for ind, fit in results:
-        ind.fitness.values = fit
+            except concurrent.futures.TimeoutError:
+                logger.warning(
+                    "Global timeout reached during population evaluation")
+                # Assign worst fitness to any remaining individuals
+                for future, ind in futures.items():
+                    if not future.done():
+                        ind.fitness.values = (0.0,)
 
-    log_gpu_usage()  # Log after evaluation
+            return population
 
-    return population
+    except Exception as e:
+        logger.error(f"Error during population evaluation: {e}")
+        # Ensure all individuals have fitness values
+        for ind in population:
+            if not hasattr(ind, 'fitness') or not ind.fitness.valid:
+                ind.fitness.values = (0.0,)
+        return population
 
 
 def init_worker():
@@ -240,7 +275,7 @@ class GeneticAlgorithm:
         fitness_history (dict): Records fitness statistics per generation.
     """
 
-    def __init__(self, config: Config, X_train, X_val, y_train, y_val):
+    def __init__(self, config: Config, X_train, X_val, y_train, y_val, df, paths):
         """
         Initialize the Genetic Algorithm with configuration and data.
 
@@ -263,6 +298,7 @@ class GeneticAlgorithm:
         self.X_val = X_val
         self.y_train = y_train
         self.y_val = y_val
+        self.df = df  # Store the full DataFrame
         self.model = build_model(config.model)
         self.total_weights = self.calculate_total_weights()
         self.setup_deap()
@@ -272,6 +308,7 @@ class GeneticAlgorithm:
         self.counters = defaultdict(int)
         self.pool = None
         self.processes = []
+        self.paths = paths
 
     def calculate_total_weights(self) -> int:
         """
@@ -335,8 +372,9 @@ class GeneticAlgorithm:
         logger.debug(f"Recording fitness started {generation}.")
 
         pid = os.getpid()
-        filename = f"{filename_base}_{pid}.log"
 
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"fitness_history_{timestamp}.json"
         # Increment the counter for the current PID
         self.counters[pid] += 1
         current_count = self.counters[pid]
@@ -353,10 +391,7 @@ class GeneticAlgorithm:
         # Store fitness history to file in batches
         if self.counters[pid] % batch == 0:
             try:
-                log_directory = '/Users/bernd/python/XOR/logs/'
-                os.makedirs(log_directory, exist_ok=True)
-                filepath = os.path.join(log_directory, filename)
-
+                filepath = os.path.join(self.paths.results, filename)
                 with open(filepath, 'a') as f:
                     f.write(f"{self.fitness_history}\n")
                 logging.debug(
@@ -369,6 +404,49 @@ class GeneticAlgorithm:
             except Exception as e:
                 logging.error(
                     f"Process {pid}: Failed to write to {filename}: {e}")
+
+    def train_best_individual(self, individual):
+        model = build_model(self.config.model)
+
+        # Set weights from individual
+        weight_shapes = [w.shape for layer in model.layers
+                         for w in layer.get_weights() if w.size > 0]
+        weight_tuples = []
+        idx = 0
+        for shape in weight_shapes:
+            size = np.prod(shape)
+            weights = np.array(individual[idx:idx+size]).reshape(shape)
+            weight_tuples.append(weights)
+            idx += size
+        model.set_weights(weight_tuples)
+
+        # Prepare training data with noise features
+        if self.config.experiment.noise_dimensions > 0:
+            noise_cols = [
+                f'noise_{i+1}' for i in range(self.config.experiment.noise_dimensions)]
+            X_train_full = np.column_stack([
+                self.X_train,
+                self.df[noise_cols].values[: len(self.X_train)]
+            ])
+            X_val_full = np.column_stack([
+                self.X_val,
+                self.df[noise_cols].values[len(self.X_train): len(
+                    self.X_train) + len(self.X_val)]
+            ])
+        else:
+            X_train_full = self.X_train
+            X_val_full = self.X_val
+
+        # Train model with full feature set
+        history = model.fit(
+            X_train_full, self.y_train,
+            epochs=self.config.ga.epochs,
+            batch_size=self.config.model.batch_size,
+            validation_data=(X_val_full, self.y_val),
+            verbose=1
+        )
+
+        return model, history
 
     def run(self):
         """
@@ -418,7 +496,7 @@ class GeneticAlgorithm:
             # Evaluate the entire population
             futures = {executor.submit(eval_individual, ind, self.config,
                                        self.X_train, self.X_val,
-                                       self.y_train, self.y_val): ind for ind in pop}
+                                       self.y_train, self.y_val, self.df): ind for ind in pop}
             logger.debug(f"futures created.")
 
             count = 0
@@ -499,7 +577,7 @@ class GeneticAlgorithm:
                 # Setup future parallel execution with per individual time-out
                 futures = {executor.submit(eval_individual, ind, self.config,
                                            self.X_train, self.X_val,
-                                           self.y_train, self.y_val): ind for ind in offspring}
+                                           self.y_train, self.y_val, self.df): ind for ind in offspring}
                 count = 0
                 killed = 0
                 try:
@@ -574,77 +652,71 @@ class GeneticAlgorithm:
         # After recording statistics
         for entry in master_logbook:
             logger.debug(entry)
-        current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        fitness_filename = f'fitness_history_{current_date}.json'
-        fitness_filepath = os.path.join("results", fitness_filename)
+        # current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # fitness_filename = f'fitness_history_{current_date}.json'
+        # fitness_filepath = os.path.join("results", fitness_filename)
 
         # Save fitness history to a JSON file in the results directory
-        with open(fitness_filepath, 'w') as f:
-            json.dump(self.fitness_history, f)
+        # with open(fitness_filepath, 'w') as f:
+        #    json.dump(self.fitness_history, f)
 
         # Retrieve the best individual from Hall of Fame
         best_individual = hof[0] if hof else None
         logger.info(
             f"Best Individual: {best_individual}, Fitness: {best_individual.fitness.values if best_individual else 'N/A'}")
 
+        # After evolution completes, train and save the best model
+        # best_individual = tools.selBest(population, k=1)[0]
+        best_model, best_history = self.train_best_individual(best_individual)
+
+        # Save the best model and its training history
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_model_and_history(best_model, best_history, self.paths, timestamp)
+        # Generate and save the final classification plot
+        plot_path = f"{self.paths.plots}/final_classification.png"
+
+        try:
+            plot_train_test_with_decision_boundary(
+                model=best_model,
+                X_train=self.X_train,
+                X_test=self.X_val,
+                y_train=self.y_train,
+                y_test=self.y_val,
+                df=self.df,  # Pass the full DataFrame
+                config=self.config,  # Pass the configuration
+                save_path=plot_path
+            )
+            logger.info(f"Final classification plot saved to {plot_path}")
+        except Exception as e:
+            logger.error(
+                f"Failed to generate final classification plot: {str(e)}", exc_info=True)
+
         return best_individual, master_logbook
 
 
-def save_results(self, best_individual, logbook, dirs):
-    """
-    Save GA results using standardized directory structure
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_path = f"{dirs['results']}/ga_results_{timestamp}.pkl"
-
-    with open(results_path, 'wb') as f:
-        pickle.dump({
-            'best_individual': best_individual,
-            'logbook': logbook,
-            'config_name': self.config_name,
-            'timestamp': timestamp
-        }, f)
-
 # @profile
-
-
-def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) -> tuple:
+def eval_individual(individual, config, X_train, X_val, y_train, y_val, df):
     """
-    Evaluate an individual's fitness based on validation accuracy.
+    Evaluate a single individual.
 
     Parameters:
-    - individual (list): List of weights representing an individual.
-    - config (Config): Configuration object containing model parameters.
-    - X_train (np.ndarray): Training features.
-    - X_val (np.ndarray): Validation features.
-    - y_train (np.ndarray): Training labels.
-    - y_val (np.ndarray): Validation labels.
-
-    Returns:
-    - fitness (tuple): Validation accuracy as a tuple.
+        individual: The individual to evaluate
+        config: Configuration object
+        X_train: Training features
+        X_val: Validation features
+        y_train: Training labels
+        y_val: Validation labels
+        df: Full DataFrame containing all features
     """
-    pid = os.getpid()
-    # Determine verbose level based on logger level
-    log_level = logger.getEffectiveLevel()
-    if log_level <= logging.DEBUG:
-        verbose = 0
-    elif log_level <= logging.INFO:
-        verbose = 0
-    else:
-        verbose = 0
-
-    if (individual.fitness.valid):
-        logger.debug(f"Individual already evaluated. Skipping.")
-        return individual.fitness.values
     try:
-        tf.keras.backend.clear_session()  # Clear session at start
+        tf.keras.backend.clear_session()
 
-        # with tf.device('/cpu:0'):  # Force CPU usage to avoid GPU conflicts
+        # Build model with correct input shape
         model = build_model(config.model)
 
         # Reshape individual to match model weights
-        weight_shapes = [
-            w.shape for layer in model.layers for w in layer.get_weights() if w.size > 0]
+        weight_shapes = [w.shape for layer in model.layers
+                         for w in layer.get_weights() if w.size > 0]
         weight_tuples = []
 
         idx = 0
@@ -653,50 +725,40 @@ def eval_individual(individual, config: Config, X_train, X_val, y_train, y_val) 
             weights = np.array(individual[idx:idx+size]).reshape(shape)
             weight_tuples.append(weights)
             idx += size
+
         model.set_weights(weight_tuples)
 
-        # Compile the model to reset optimizer state
-        optimizer = get_optimizer(config.model.optimizer, config.model.lr)
-        model.compile(optimizer=optimizer,
-                      loss='binary_crossentropy', metrics=['accuracy'])
-        logger.debug(
-            f"{pid} Model compiled successfully after setting weights.")
+        # Prepare data with noise features if specified
+        if config.experiment.noise_dimensions > 0:
+            noise_cols = [
+                f'noise_{i+1}' for i in range(config.experiment.noise_dimensions)]
+            noise_data = df[noise_cols].values[: len(X_train)]
+            X_train_full = np.column_stack([X_train, noise_data])
 
-        # Train the model
-        model.fit(
-            X_train, y_train,
+            noise_data_val = df[noise_cols].values[len(
+                X_train): len(X_train) + len(X_val)]
+            X_val_full = np.column_stack([X_val, noise_data_val])
+
+        else:
+            X_train_full = X_train
+            X_val_full = X_val
+
+        # Train and evaluate
+        history = model.fit(
+            X_train_full, y_train,
+            validation_data=(X_val_full, y_val),
             epochs=config.ga.epochs,
             batch_size=config.model.batch_size,
-            validation_data=(X_val, y_val),
-            verbose=verbose
+            verbose=0
         )
 
-        logger.debug(f"{pid} Model training completed.")
-        filepath = "results"
-        os.makedirs(filepath, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = uuid.uuid4()
-
-        full_filepath = os.path.join(
-            filepath, f"ga_results_{timestamp}_{unique_id}.keras")
-
-        # mod ger.info(f"{pid} Trained model saved to {full_filepath}.")
-
-        # Evaluate the model
-        val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
-        logger.info(f"{pid} Validation Accuracy: {val_accuracy}")
-        tf.keras.backend.clear_session()
-        del model
-        gc.collect()
-
+        val_accuracy = history.history['val_accuracy'][-1]
         return (val_accuracy,)
 
     except Exception as e:
         logger.error(
-            f"{pid} Error during individual evaluation: {e}", exc_info=True)
+            f"Error during individual evaluation: {str(e)}", exc_info=True)
         return (0.0,)
-    finally:
-        tf.keras.backend.clear_session()  # Ensure cleanup
 
 
 def evaluate_individual(self, individual):
