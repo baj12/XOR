@@ -1,5 +1,12 @@
 #!/bin/bash
 
+## need to modify poweruser permission
+# sudo visudo -f /etc/sudoers.d/powermetrics
+# yourusername ALL=(root) NOPASSWD: /usr/bin/powermetrics
+# sudo chmod 440 /etc/sudoers.d/powermetrics
+# sudo powermetrics --show-gpu --show-ane -i 1000 -n 1
+
+
 # experiment_runner.sh
 set -e  # Exit on error
 
