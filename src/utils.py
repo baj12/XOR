@@ -72,17 +72,6 @@ class DataConfig:
 
 
 @dataclass
-class GAConfig:
-    population_size: int
-    cxpb: float
-    mutpb: float
-    ngen: int
-    n_processes: int
-    max_time_per_ind: float
-    epochs: int
-
-
-@dataclass
 class Config:
     experiment: ExperimentConfig
     data: DataConfig

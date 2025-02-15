@@ -22,7 +22,7 @@ GA_PARAMS = {
     'mutpb': 0.2,
     'ngen': 100,
     'n_processes': 4,
-    'max_time_per_ind': 300,
+    'max_time_per_ind': 7200,
     'epochs': 20
 }
 

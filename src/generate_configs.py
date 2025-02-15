@@ -69,7 +69,7 @@ def generate_configs():
         'mutation_prob': [0.1, 0.2, 0.3],
         'n_generations': [50, 100, 200],
         'n_processes': [4],  # Adjust based on available CPU cores
-        'max_time_per_ind': [300],  # 5 minutes timeout
+        'max_time_per_ind': [7200],  # 5 minutes timeout
         'epochs': [10, 20, 50]
     }
 
@@ -96,7 +96,7 @@ def generate_configs():
                 'mutpb': 0.2,
                 'ngen': 100,
                 'n_processes': 4,
-                'max_time_per_ind': 300,
+                'max_time_per_ind': 7200,
                 'epochs': 20
             },
             model_params={

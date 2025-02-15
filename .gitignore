@@ -46,3 +46,8 @@ last*.txt
 mprofil*.dat
 config/*.yaml
 config/yaml/*
+config/yaml/*.yaml
+experiments/*
+experiment_progress.txt
+experiment_runner.sh.txt
+failed_experiments.txt
