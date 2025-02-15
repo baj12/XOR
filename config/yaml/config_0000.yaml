@@ -4,17 +4,17 @@ data:
   input_dim: 2
 experiment:
   class_separation: 0.5
-  description: XOR experiment with 0 hidden layers
+  description: XOR experiment with 0 noise dimensions, 0 hidden layers
   id: '0'
   noise_dimensions: 0
 ga:
   cxpb: 0.8
   epochs: 20
-  max_time_per_ind: 300
+  max_time_per_ind: 7200
   mutpb: 0.2
   n_processes: 4
-  ngen: 100
-  population_size: 100
+  ngen: 10
+  population_size: 10
 metrics:
   tracking:
     evaluation:
