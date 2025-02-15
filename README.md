@@ -1,3 +1,6 @@
+Based on the project context and recent monitoring additions, I'll help update the README.md with the added GPU monitoring setup. Here's the updated content:
+
+```markdown
 # XOR 
 
 ## Overview
@@ -20,6 +23,23 @@ The purpose is to better understand how DL works, including neural network optim
     conda activate xorProject
     ```
 
+3. **Setup GPU Monitoring (for Apple Silicon):**
+   
+   To enable GPU monitoring, you need to configure sudo access for powermetrics:
+   ```bash
+   # Create a new sudoers file for powermetrics
+   sudo visudo -f /etc/sudoers.d/powermetrics
+   
+   # Add this line (replace yourusername with your username):
+   yourusername ALL=(root) NOPASSWD: /usr/bin/powermetrics
+   
+   # Set proper permissions
+   sudo chmod 440 /etc/sudoers.d/powermetrics
+   
+   # Test the configuration
+   sudo powermetrics --show-gpu --show-ane -i 1000 -n 1
+   ```
+
 ## Usage
 
 ### Generate Data
@@ -32,16 +52,32 @@ python src/data_generator.py
 
 ### Run the Main Script
 
-Run the main script with the path to the input CSV file containing `x`, `y`, and `label` columns:
+Run the main script with a configuration file:
 
 ```sh
-python src/main.py data/raw/xor_data.min1.csv
+python src/main.py --config config/config.yaml --log INFO
 ```
 
+For cluster usage:
 ```sh
-srun -c 4 --mem 48G -p gpu -q fast --gres=gpu:1 python src/main.py data/raw/xor_data.csv --config config/config.yaml 2>&1 | tee plots/mylog.xor_data.config.txt
+srun -c 4 --mem 48G -p gpu -q fast --gres=gpu:1 python src/main.py --config config/config.yaml --log DEBUG 2>&1 | tee plots/mylog.xor_data.config.txt
 ```
 
+### Resource Monitoring
+
+The script automatically monitors:
+- CPU usage per process
+- Memory usage (Physical and Virtual)
+- Thread count
+- Process count
+- GPU metrics (if on Apple Silicon and properly configured)
+  - GPU Utilization
+  - GPU Memory usage
+  - Neural Engine (ANE) usage
+
+Monitoring data is saved in two files:
+- `*_resources.csv`: Contains timestamped metrics in CSV format
+- `*_details.log`: Contains detailed per-process information
 
 ### Clean Directories
 
@@ -75,120 +111,39 @@ Generate plots for training and testing data with decision boundaries:
 python src/generate_plot.py --data_file <data_file> --model_file <model_file> --output_file <output_file>
 ```
 
-## Detailed Description
-
-### Methods Used
-
-- **Deep Learning (DL):** A neural network is built and trained to solve the XOR problem.
-- **Genetic Algorithms (GA):** Used to optimize the initial weights of the neural network.
-
-### Optimization
-
-- **Genetic Algorithm:** Optimizes the initial weights of the neural network to improve training performance.
-- **Neural Network Training:** Uses the optimized weights to train the model and achieve better accuracy.
-
-### Genetic Algorithm (GA)
-
-The GA works by evolving a population of candidate solutions (individuals) over several generations. Each individual represents a set of initial weights for the neural network. The steps involved are:
-
-1. **Initialization:** Create an initial population of individuals with random weights.
-2. **Evaluation:** Evaluate the fitness of each individual by training the neural network with the corresponding weights and measuring its performance.
-3. **Selection:** Select individuals based on their fitness to create a mating pool.
-4. **Crossover:** Perform crossover (recombination) on pairs of individuals to create offspring.
-5. **Mutation:** Apply random mutations to the offspring to introduce variability.
-6. **Replacement:** Replace the old population with the new offspring.
-7. **Repeat:** Repeat the evaluation, selection, crossover, mutation, and replacement steps for a specified number of generations.
-
-### Neural Network
-
-The neural network used in this project is a simple feedforward neural network with the following structure:
-
-- **Input Layer:** Takes two input features (`x` and `y`).
-- **Hidden Layers:** Two hidden layers with configurable units and activation functions.
-- **Output Layer:** A single output unit with a sigmoid activation function for binary classification.
-
-The network is trained using the Adam optimizer and binary cross-entropy loss.
-
-### Logging Levels
-
-Logging is configured to provide detailed information during execution. The logging levels can be adjusted in the `model.py` file:
-
-```python
-# model.py
-logging.basicConfig(
-    level=logging.DEBUG,  # Change to logging.INFO or logging.ERROR as needed
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('debug.log'),
-        logging.StreamHandler()
-    ]
-)
-```
-
-### Tunable Parameters
+## Configuration
 
 Parameters can be tuned in the `config/config.yaml` file:
 
 - **Genetic Algorithm Parameters:**
-  - `population_size`: Number of individuals in the population.
-  - `cxpb`: Crossover probability.
-  - `mutpb`: Mutation probability.
-  - `ngen`: Number of generations.
-  - `n_processes`: Number of processes for parallel execution.
+  - `population_size`: Number of individuals in the population
+  - `cxpb`: Crossover probability
+  - `mutpb`: Mutation probability
+  - `ngen`: Number of generations
+  - `n_processes`: Number of processes for parallel execution
+  - `max_time_per_ind`: Maximum time per individual evaluation (in seconds)
 
 - **Model Parameters:**
-  - `hl1`: Number of units in the first hidden layer.
-  - `hl2`: Number of units in the second hidden layer.
-  - `activation`: Activation function for hidden layers.
-  - `optimizer`: Optimizer to use (e.g., 'adam', 'sgd').
-  - `lr`: Learning rate for the optimizer.
-  - `batch_size`: Batch size for training.
+  - `hl1`: Number of units in the first hidden layer
+  - `hl2`: Number of units in the second hidden layer
+  - `activation`: Activation function for hidden layers
+  - `optimizer`: Optimizer to use (e.g., 'adam', 'sgd')
+  - `lr`: Learning rate for the optimizer
+  - `batch_size`: Batch size for training
 
-Example `config/config.yaml`:
+## Future Improvements
 
-```yaml
-ga:
-  population_size: 50
-  cxpb: 0.5
-  mutpb: 0.2
-  ngen: 100
-  n_processes: 4
+- Allow more flexible network architectures
+- Allow other input files
+- Rotate input data to see if this helps to get perfect separations
+- Evaluate GA parameters impact on network complexity
+- Add SQL database support for result storage
+- Compare CPU vs GPU performance metrics
+- Implement Kipoi model descriptions
 
-model:
-  hl1: 10
-  hl2: 10
-  activation: 'relu'
-  optimizer: 'adam'
-  lr: 0.001
-  batch_size: 16
+## Issues
+
+- Monitor and handle non-terminating individuals
+- Memory leak investigation
+- Performance comparison between CPU and GPU implementations
 ```
-
-### Plotting Results
-
-The results of the genetic algorithm and model training are plotted and saved as images. The plots include:
-
-- Average and Max Fitness over Generations
-- Training and Validation Accuracy
-- Training and Validation Loss
-
-These plots are saved in the `plots` directory with timestamps.
-
-
-## things still to do
-
-- allow more flexible network architectures
-
-- allow other input files
-
-- rotate input data to see if this helps to get perfect separations
-
-- use xor problem to evaluate how many generations and individuals one needs depending on complexity of network. i.e. vary the number generations and individuals for a given network complexity, 2,1; 2,2; 16, 16; 32, 32; 64,64; 128,128; 512,512
-
-
-there is still a problem with non-terminating individuals.
-
-check memory leak
-
-compare only CPU vs with GPU and see which one is faster by how much?
-
-check out kipoi for model description
