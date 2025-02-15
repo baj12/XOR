@@ -1,6 +1,3 @@
-Based on the project context and recent monitoring additions, I'll help update the README.md with the added GPU monitoring setup. Here's the updated content:
-
-```markdown
 # XOR 
 
 ## Overview
