@@ -9,8 +9,8 @@ experiment:
   noise_dimensions: 0
 ga:
   cxpb: 0.8
-  epochs: 20
-  max_time_per_ind: 7200
+  epochs: 10
+  max_time_per_ind: 72000
   mutpb: 0.2
   n_processes: 4
   ngen: 10
