@@ -205,11 +205,15 @@ def main():
         cleanup_processes()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
-        mp.set_start_method('spawn', force=True)
+        mp.set_start_method('spawn')
+        # pool = mp.Pool(initializer=init_worker)
         main()
     except Exception as e:
-        logger.error(f"Error in main execution: {e}")
+        print(f"Error: {e}")
     finally:
+        if 'pool' in locals():
+            pool.close()
+            pool.join()
         cleanup_processes()
