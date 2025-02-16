@@ -10,6 +10,12 @@
 # experiment_runner.sh
 set -e  # Exit on error
 
+# Function to print messages that works in both bash and zsh
+log_message() {
+    echo "$@"
+}
+
+
 # Configuration
 LOG_DIR="logs"
 RESOURCE_DIR="logs/resources"
@@ -167,7 +173,12 @@ is_process_running() {
 start_powermetrics() {
     local pid=$1
     if [ "$(uname -p)" = "arm" ]; then
-        sudo powermetrics -i 1000 --show-gpu --show-ane > "/tmp/powermetrics_$pid.txt" 2>/dev/null &
+         sudo powermetrics \
+                -i 1000 \
+                --samplers cpu_power,gpu_power,ane_power \
+                --show-process-gpu \
+                --format text \
+                 > "/tmp/powermetrics_$pid.txt" 2>/dev/null &
         echo $!
     fi
 }
@@ -176,138 +187,128 @@ start_powermetrics() {
 stop_powermetrics() {
     local powermetrics_pid=$1
     if [ ! -z "$powermetrics_pid" ]; then
-        sudo kill $powermetrics_pid 2>/dev/null
+        echo sudo  kill $powermetrics_pid 2>/dev/null
     fi
 }
 
 
 # Function to run single experiment
 run_experiment() {
-    local config_file="$1"
+    local config_file=$1
     local config_name=$(basename "$config_file" .yaml)
     local timestamp=$(date '+%Y%m%d_%H%M%S')
     local log_file="$LOG_DIR/${config_name}_${timestamp}.log"
     local resource_log="$RESOURCE_DIR/${config_name}_${timestamp}_resources.csv"
 
-    echo "Starting experiment: $config_file at $(date)"
-    echo "Log file: $log_file"
-    echo "Resource monitoring: $resource_log"
+    log_message "Starting experiment: $config_file at $(date)"
+    log_message "Log file: $log_file"
+    log_message "Resource monitoring: $resource_log"
 
     # Activate conda environment
-    if [ -f "$(conda info --base)/etc/profile.d/conda.sh" ]; then
-        . "$(conda info --base)/etc/profile.d/conda.sh"
-        conda activate "$PYTHON_ENV"
+    if [[ -f "$(conda info --base)/etc/profile.d/conda.sh" ]]; then
+        source "$(conda info --base)/etc/profile.d/conda.sh"
+        conda activate $PYTHON_ENV || {
+            log_message "Error: Failed to activate conda environment"
+            return 1
+        }
     else
-        echo "Error: Conda not found"
+        log_message "Error: Conda not found"
         return 1
     fi
 
     # Start the Python process
-    python src/main.py --config "$config_file" --log DEBUG > "$log_file" 2>&1 &
+    python src/main.py --config $config_file --log DEBUG > $log_file 2>&1 &
     local python_pid=$!
+    log_message "Started Python process with PID: $python_pid"
 
     # Initialize GPU monitoring if available
     local powermetrics_pid=""
-    if [ "$(uname -p)" = "arm" ]; then
+    if [[ "$(uname -p)" == "arm" ]]; then
         powermetrics_pid=$(start_powermetrics $python_pid)
-        echo "Started powermetrics monitoring with PID: $powermetrics_pid"
+        if [[ -n "$powermetrics_pid" ]]; then
+            log_message "Started powermetrics monitoring with PID: $powermetrics_pid"
+        fi
     fi
 
     # Start resource monitoring
-    monitor_resources $python_pid "$resource_log" &
+    monitor_resources $python_pid $resource_log &
     local monitor_pid=$!
-    echo "Started resource monitoring with PID: $monitor_pid"
-
-    # Function to cleanup processes
-    cleanup_processes() {
-        local pids_to_kill=("$@")
-        for pid in "${pids_to_kill[@]}"; do
-            if [ ! -z "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                echo "Killing process $pid"
-                kill -TERM "$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
-            fi
-        done
-    }
+    log_message "Started resource monitoring with PID: $monitor_pid"
 
     # Setup timeout
-    local timeout_duration=7200  # 2 hours in seconds
-    local end_time=$((SECONDS + timeout_duration))
+    timeout_duration=72000  # 20 hours in seconds
+    end_time=$((SECONDS + timeout_duration))
+    status=0
 
+    log_message "Waiting for experiment completion (timeout: ${timeout_duration}s)..."
+    
     # Wait for Python process with timeout
-    local status=0
     while [ $SECONDS -lt $end_time ]; do
         if ! kill -0 $python_pid 2>/dev/null; then
+            # Process has finished
             wait $python_pid
             status=$?
+            log_message "Python process completed with status: $status"
             break
         fi
-        sleep 5
+        
+        # Check if the process is actually doing something
+        if [ -f "$log_file" ]; then
+            log_size=$(stat -f %z "$log_file")
+            log_message "Current log size: $log_size bytes"
+        fi
+        
+        sleep 30  # Check every 30 seconds
     done
 
     # Check if we timed out
     if [ $SECONDS -ge $end_time ]; then
-        echo "Experiment timed out after ${timeout_duration} seconds"
-        status=124  # Traditional timeout exit code
+        log_message "Experiment timed out after ${timeout_duration} seconds"
+        status=124
     fi
-
+    # Clean up processes
+    log_message "Cleaning up processes..."
+    
     # Stop monitoring processes
-    cleanup_processes $monitor_pid $powermetrics_pid
+    if [[ -n "$monitor_pid" ]] && kill -0 $monitor_pid 2>/dev/null; then
+        log_message "Stopping monitor process: $monitor_pid"
+        kill -TERM $monitor_pid 2>/dev/null || true
+        wait $monitor_pid 2>/dev/null || true
+    fi
 
     # Stop powermetrics if running
-    if [ ! -z "$powermetrics_pid" ]; then
-        stop_powermetrics $powermetrics_pid
-        rm -f "/tmp/powermetrics_$python_pid.txt"
+    if [[ -n "$powermetrics_pid" ]]; then
+        log_message "Stopping powermetrics process: $powermetrics_pid"
+        if sudo -n true 2>/dev/null; then
+            sudo -n kill -TERM $powermetrics_pid 2>/dev/null || true
+        else
+            log_message "Warning: Cannot stop powermetrics without sudo"
+        fi
     fi
 
-    # Kill any remaining child processes
-    pkill -P $python_pid 2>/dev/null
-    cleanup_processes $python_pid
-
-    # Generate resource usage plots
-    if [ -f "$resource_log" ] && [ -s "$resource_log" ]; then
-        generate_resource_plots "$resource_log"
+    # Kill Python process and its children if still running
+    if kill -0 $python_pid 2>/dev/null; then
+        log_message "Terminating Python process and children"
+        pkill -P $python_pid 2>/dev/null || true
+        kill -TERM $python_pid 2>/dev/null || true
+        sleep 1
+        kill -KILL $python_pid 2>/dev/null || true
     fi
 
-    # Process results
-    if [ $status -eq 0 ]; then
-        echo "$config_file:COMPLETED:$(date '+%Y-%m-%d %H:%M:%S')" >> "$PROGRESS_FILE"
-        echo "Successfully completed: $config_file"
-        
-        # Generate summary statistics
-        {
-            echo "Experiment Summary"
-            echo "=================="
-            echo "Config: $config_name"
-            echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "Duration: $SECONDS seconds"
-            echo ""
-            echo "Resource Usage Summary"
-            echo "---------------------"
-            awk -F',' '
-                NR>1 {
-                    cpu+=$2; mem+=$3; vmem+=$4; threads+=$5; count++
-                    if($2>max_cpu) max_cpu=$2
-                    if($3>max_mem) max_mem=$3
-                }
-                END {
-                    if(count>0) {
-                        printf "Average CPU: %.2f%%\n", cpu/count
-                        printf "Average Memory: %.2f MB\n", mem/count
-                        printf "Peak CPU: %.2f%%\n", max_cpu
-                        printf "Peak Memory: %.2f MB\n", max_mem
-                    }
-                }
-            ' "$resource_log" 
-        } > "${resource_log%.*}_summary.txt"
-        
-        return 0
+    # Check results
+    if [[ $status -eq 0 ]]; then
+        if [[ -f "$log_file" && -s "$log_file" ]]; then
+            log_message "Experiment completed successfully"
+            log_message "$config_file:COMPLETED:$(date '+%Y-%m-%d %H:%M:%S')" >> $PROGRESS_FILE
+            return 0
+        else
+            log_message "Error: Log file is empty or missing"
+            return 1
+        fi
     else
-        local error_msg=$(tail -n 5 "$log_file" | tr '\n' ' ')
-        echo "$config_file:FAILED:$error_msg:$(date '+%Y-%m-%d %H:%M:%S')" >> "$FAILED_FILE"
-        echo "Failed: $config_file"
-        echo "Exit status: $status"
-        echo "Last few lines of log:"
-        tail -n 10 "$log_file"
+        log_message "Experiment failed with status: $status"
+        local error_msg=$(tail -n 5 $log_file | tr '\n' ' ')
+        log_message "$config_file:FAILED:$error_msg:$(date '+%Y-%m-%d %H:%M:%S')" >> $FAILED_FILE
         return 1
     fi
 }
