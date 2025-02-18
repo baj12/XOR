@@ -3,10 +3,9 @@ import os
 from itertools import product
 
 import yaml
-
-from .parameter_sets import (ARCHITECTURE_VARIANTS, CLASS_SEPARATION,
-                             GA_PARAMS, HIDDEN_LAYERS_RANGE, METRICS_CONFIG,
-                             MODEL_PARAMS, NEURONS_RANGE, NOISE_DIMENSIONS)
+from parameter_sets import (ARCHITECTURE_VARIANTS, CLASS_SEPARATION, GA_PARAMS,
+                            HIDDEN_LAYERS_RANGE, METRICS_CONFIG, MODEL_PARAMS,
+                            NEURONS_RANGE, NOISE_DIMENSIONS)
 
 
 def get_data_filepath(config_path: str) -> str:
