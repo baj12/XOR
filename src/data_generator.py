@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-from src.utils import Config, load_config
+from utils import Config, load_config
 
 # run by
 # for fp in config/yaml/config_00*.yaml ; do python -m src.data_generator --config $fp ; done

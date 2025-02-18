@@ -22,7 +22,7 @@ RESOURCE_DIR="logs/resources"
 PROGRESS_FILE="experiment_progress.txt"
 FAILED_FILE="failed_experiments.txt"
 CONFIG_DIR="config/yaml"
-PYTHON_ENV="xorProject-test"
+PYTHON_ENV="xorProject"
 
 # Cleanup function
 cleanup() {
