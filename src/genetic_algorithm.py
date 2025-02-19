@@ -240,6 +240,41 @@ def init_worker():
             logger.warning(f"GPU configuration failed: {e}")
 
 
+def is_process_idle(pid, idle_threshold_seconds=15):
+    """Check if a process is idle based on CPU usage over time."""
+    try:
+        process = psutil.Process(pid)
+        # Get CPU usage over 1 second interval
+        cpu_percent = process.cpu_percent(interval=1.0)
+        return cpu_percent < 0.1  # Consider idle if CPU usage is less than 0.1%
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return True
+
+
+def check_tensorflow_hanging(pid):
+    """Check if TensorFlow process is hanging by monitoring GPU usage."""
+    try:
+        process = psutil.Process(pid)
+        # Check if process has any threads doing work
+        threads = process.threads()
+        thread_count = len(threads)
+
+        # If number of threads is abnormally high, might indicate a hang
+        if thread_count > 20:
+            return True
+
+        # Check memory growth over time
+        initial_memory = process.memory_info().rss
+        time.sleep(2)
+        final_memory = process.memory_info().rss
+
+        # If memory hasn't changed and CPU is idle, might be hanging
+        return (final_memory == initial_memory and
+                process.cpu_percent() < 0.1)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return True
+
+
 def init_worker_logging():
     """
     Initializes logging for each worker process.
@@ -259,6 +294,53 @@ def init_worker_logging():
     )
     # Suppress DEBUG logs from specific third-party libraries if needed
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
+
+def monitor_population_progress(futures_dict, stall_threshold=300):
+    """
+    Monitor overall population evaluation progress.
+
+    Args:
+        futures_dict: Dictionary of {future: individual}
+        stall_threshold: Time in seconds to wait before considering evaluation stalled
+    """
+    last_completion_time = time.time()
+    last_completion_count = 0
+
+    while futures_dict:
+        current_time = time.time()
+        current_completion_count = sum(1 for f in futures_dict if f.done())
+
+        # Check if we've made any progress
+        if current_completion_count > last_completion_count:
+            last_completion_time = current_time
+            last_completion_count = current_completion_count
+            logger.debug(
+                f"Progress: {current_completion_count}/{len(futures_dict)} evaluations complete")
+
+        # Check if we're stalled
+        elif current_time - last_completion_time > stall_threshold:
+            remaining = len(futures_dict) - current_completion_count
+            logger.warning(f"Evaluation stalled: No progress for {stall_threshold}s. "
+                           f"{remaining} evaluations remaining")
+
+            # Find the running evaluations
+            running_futures = [f for f in futures_dict if not f.done()]
+            if running_futures:
+                logger.warning("Terminating stalled evaluation batch")
+                # Cancel all remaining futures
+                for future in running_futures:
+                    future.cancel()
+                    # Assign worst fitness to the corresponding individuals
+                    if future in futures_dict:
+                        individual = futures_dict[future]
+                        individual.fitness.values = (0.0,)
+
+                return False  # Indicate stall detected
+
+        time.sleep(5)  # Check every 5 seconds
+
+    return True  # All evaluations completed normally
 
 
 class GeneticAlgorithm:
