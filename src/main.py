@@ -122,17 +122,19 @@ def run_experiment(config: Config, data_file: str):
     plot_results(logbook, f"{experiment_dir}/plots")
 """
 
+
 def optimize_for_cpu():
     """Configure TensorFlow for CPU optimization"""
     # Set number of threads
     tf.config.threading.set_intra_op_parallelism_threads(6)
     tf.config.threading.set_inter_op_parallelism_threads(6)
-    
+
     # Enable MKL if available
     os.environ['TF_ENABLE_MKL_NATIVE_FORMAT'] = '1'
-    
+
     # Optional: limit memory growth
     os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
 
 def main():
     args = parse_arguments()
@@ -148,8 +150,10 @@ def main():
     try:
         # Load configuration
         config = load_config(args.config)
+        logger.info(f"GPU enabled in config: {config.experiment.use_gpu}")
+
         # Setup compute device
-        if not config.use_gpu:
+        if not config.experiment.use_gpu:  # Change this line
             optimize_for_cpu()
         # Create config dictionary for writing to text file
         config_dict = {

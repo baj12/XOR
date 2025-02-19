@@ -62,6 +62,7 @@ class ExperimentConfig:
     description: str
     noise_dimensions: int
     class_separation: float
+    use_gpu: bool = True  # Added here with default value
 
 
 @dataclass
@@ -69,6 +70,7 @@ class DataConfig:
     input_dim: int
     class_distribution: float
     dataset_size: int
+    use_gpu: bool = True
 
 
 @dataclass
@@ -78,7 +80,6 @@ class Config:
     ga: GAConfig
     model: ModelConfig
     metrics: dict
-    use_gpu: bool = False  # Add GPU toggle as a default field
 
 
 class ExperimentPaths:

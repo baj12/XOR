@@ -16,6 +16,7 @@ from utils import Config, ModelConfig
 
 logger = logging.getLogger(__name__)
 
+
 def setup_device():
     """Configure device based on availability"""
     if tf.test.is_built_with_cuda():
@@ -28,7 +29,7 @@ def setup_device():
                 return "GPU"
             except RuntimeError as e:
                 print(f"GPU configuration failed: {e}")
-    
+
     print("Using CPU only mode")
     # Disable GPU visibility
     tf.config.set_visible_devices([], 'GPU')
@@ -66,7 +67,7 @@ def build_model(config: ModelConfig):
     - tf.keras.Model: Compiled Keras model
     """
     tf.keras.backend.clear_session()  # Clear any existing session
-    device = setup_device()
+    # device = setup_device()
 
     with tf.keras.utils.CustomObjectScope({}):  # Create a clean scope
         inputs = Input(shape=(config.input_dim,))
@@ -139,7 +140,7 @@ def build_and_train_model(initial_weights, df, config: Config,
     if not config.use_gpu:
         tf.config.set_visible_devices([], 'GPU')
         logger.info("Running in CPU-only mode")
-    
+
     # Set up directories
     for path in [model_save_path, plot_accuracy_path, plot_loss_path]:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
