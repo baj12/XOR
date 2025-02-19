@@ -78,6 +78,7 @@ class Config:
     ga: GAConfig
     model: ModelConfig
     metrics: dict
+    use_gpu: bool = False  # Add GPU toggle as a default field
 
 
 class ExperimentPaths:

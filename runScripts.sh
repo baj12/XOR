@@ -19,7 +19,7 @@ do
     done
 done
 
-conda activate xorProject-test
+conda activate xorProject
 python src/main.py data/raw/xor_data.csv --config config/config.1.yaml  2>&1 | tee plots/mylog.xor_data.config.1.txt 
 python src/moveResults.py xor_data.config.1
 python src/main.py data/raw/xor_data.csv --config config/config.2.yaml  2>&1 | tee plots/mylog.xor_data.config.2.txt 

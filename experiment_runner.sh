@@ -9,6 +9,7 @@ FAILED_FILE="$PROJECT_DIR/failed_experiments.txt"
 CONFIG_DIR="$PROJECT_DIR/config/yaml"
 PYTHON_ENV="xorProject-test"
 
+
 # Default number of parallel jobs
 N_PARALLEL=${1:-4}
 
