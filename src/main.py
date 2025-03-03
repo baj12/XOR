@@ -85,42 +85,18 @@ def parse_arguments():
         default='INFO',
         help='Set the logging level'
     )
+    parser.add_argument(
+        '--skip-if-exists',
+        action='store_true',
+        help='Skip execution if output PNG files already exist'
+    )
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        help='Resume from the last saved state if available'
+    )
     return parser.parse_args()
 
-
-"""
-def run_experiment(config: Config, data_file: str):
-    # Generate data with noise
-    data = generate_xor_data(
-        n_samples=config.data.dataset_size,
-        noise_dim=config.experiment.noise_dimensions,
-        class_separation=config.data.class_distribution
-    )
-
-    # Create experiment directory
-    experiment_dir = f"results/experiment_{config.experiment.id}"
-    os.makedirs(experiment_dir, exist_ok=True)
-
-    # Save experiment metadata
-    metadata = {
-        'config': config.to_dict(),
-        'timestamp': datetime.now().isoformat(),
-        'data_shape': data.shape
-    }
-    with open(f"{experiment_dir}/metadata.yaml", 'w') as f:
-        yaml.dump(metadata, f)
-
-    # Run genetic algorithm
-    ga = GeneticAlgorithm(config, X_train, X_val, y_train, y_val, paths=paths)
-    best_individual, logbook = ga.run()
-
-    # Save results
-    save_results(best_individual, logbook,
-                 f"{experiment_dir}/ga_results.pkl")
-
-    # Generate plots
-    plot_results(logbook, f"{experiment_dir}/plots")
-"""
 
 
 def optimize_for_cpu():
@@ -147,6 +123,15 @@ def main():
     paths = ExperimentPaths(config_name)
     configure_logging(args.log, log_path=f"{paths.logs}/experiment.log")
 
+    # Check if we should skip because files exist
+    if args.skip_if_exists:
+        accuracy_files = glob.glob(f"{paths.plots}/accuracy_*.png")
+        loss_files = glob.glob(f"{paths.plots}/loss_*.png")
+        
+        if accuracy_files and loss_files:
+            logger.info("Output PNG files already exist and --skip-if-exists is enabled. Skipping execution.")
+            return
+ 
     try:
         # Load configuration
         config = load_config(args.config)
