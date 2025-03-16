@@ -44,6 +44,7 @@ cd "\$PROJECT_DIR"
 conda run -n xorProject-test python src/main.py \\
     --config "\$config_file" \\
     --log DEBUG \\
+    --skip-if-exists \\
     2>&1 | tee "\$log_file"
 
 status=\${PIPESTATUS[0]}

@@ -2,6 +2,7 @@
 
 import argparse
 import concurrent.futures
+import glob
 import logging
 import multiprocessing as mp
 import os
@@ -188,18 +189,39 @@ def main():
         logger.info("TensorFlow GPU support: %s", tf.test.is_built_with_cuda())
         logger.info("TensorFlow GPU available: %s",
                     tf.config.list_physical_devices('GPU'))
-        # Run genetic algorithm
+       
+        # Run genetic algorithm with resume option if specified
         try:
-            ga = GeneticAlgorithm(config, X_train, X_test,
-                                  Y_train, Y_test, df=df,  paths=paths)
-            best_individual, logbook = ga.run()
+            ga = GeneticAlgorithm(config, X_train, X_test, Y_train, Y_test, df=df, paths=paths)
+            
+            # Check if we should resume from previous run
+            if args.resume:
+                # Find the latest saved result file
+                result_files = glob.glob(f"{paths.results}/ga_results_*.pkl")
+                if result_files:
+                    latest_result = max(result_files, key=os.path.getmtime)
+                    logger.info(f"Resuming from previous run: {latest_result}")
+                    
+                    # Load previous state
+                    try:
+                        previous_state = load_results(latest_result)
+                        best_individual, logbook = ga.run(resume_from=previous_state)
+                    except Exception as e:
+                        logger.error(f"Failed to resume from previous state: {e}")
+                        logger.info("Starting fresh run instead")
+                        best_individual, logbook = ga.run()
+                else:
+                    logger.info("No previous run found to resume from. Starting fresh run.")
+                    best_individual, logbook = ga.run()
+            else:
+                # Normal run without resuming
+                best_individual, logbook = ga.run()
+                
             logger.debug("Genetic Algorithm completed successfully.")
         except Exception as e:
-            logger.error(
-                f"Error during Genetic Algorithm execution: {e}", exc_info=True)
+            logger.error(f"Error during Genetic Algorithm execution: {e}", exc_info=True)
             cleanup_processes()
             sys.exit(1)
-
     except Exception as e:
         logger.error(f"Error in main: {e}")
         cleanup_processes()
