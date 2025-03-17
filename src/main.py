@@ -8,6 +8,7 @@ import multiprocessing as mp
 import os
 import pickle
 import random
+import re
 import signal  # Add this import
 import sys
 from datetime import datetime
@@ -126,13 +127,21 @@ def main():
 
     # Check if we should skip because files exist
     if args.skip_if_exists:
-        accuracy_files = glob.glob(f"{paths.plots}/accuracy_*.png")
-        loss_files = glob.glob(f"{paths.plots}/loss_*.png")
+        # Get the base experiments directory
+        # This would typically be the parent directory of your paths.plots
+        experiments_dir = os.path.dirname(os.path.dirname(paths.plots))
         
-        if accuracy_files and loss_files:
-            logger.info("Output PNG files already exist and --skip-if-exists is enabled. Skipping execution.")
-            return
- 
+        # Create search pattern using just the config_name
+        search_pattern = f"{experiments_dir}/{config_name}*/plots"
+        
+        # Search for files
+        all_accuracy_files = glob.glob(f"{search_pattern}/accuracy_*.png")
+        all_loss_files = glob.glob(f"{search_pattern}/loss_*.png")
+        
+        if all_accuracy_files and all_loss_files:
+            logger.info(f"Output PNG files for {config_name} already exist and --skip-if-exists is enabled. Skipping execution.")
+            return 
+    
     try:
         # Load configuration
         config = load_config(args.config)
