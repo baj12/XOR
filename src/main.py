@@ -131,16 +131,26 @@ def main():
         # This would typically be the parent directory of your paths.plots
         experiments_dir = os.path.dirname(os.path.dirname(paths.plots))
         
-        # Create search pattern using just the config_name
-        search_pattern = f"{experiments_dir}/{config_name}*/plots"
+        # # Create search pattern using just the config_name
+        # search_pattern = f"{experiments_dir}/{config_name}*/plots"
         
-        # Search for files
-        all_accuracy_files = glob.glob(f"{search_pattern}/accuracy_*.png")
-        all_loss_files = glob.glob(f"{search_pattern}/loss_*.png")
+        # # Search for files
+        # all_accuracy_files = glob.glob(f"{search_pattern}/accuracy_*.png")
+        # all_loss_files = glob.glob(f"{search_pattern}/loss_*.png")
         
-        if all_accuracy_files and all_loss_files:
-            logger.info(f"Output PNG files for {config_name} already exist and --skip-if-exists is enabled. Skipping execution.")
-            return 
+        # if all_accuracy_files and all_loss_files:
+        #     logger.info(f"Output PNG files for {config_name} already exist and --skip-if-exists is enabled. Skipping execution.")
+        #     return 
+        
+        # Create search pattern for directories starting with config_name
+        search_pattern = f"{experiments_dir}/{config_name}*"
+        
+        # Check if any directory matching the pattern exists
+        matching_dirs = glob.glob(search_pattern)
+        
+        if matching_dirs:
+            logger.info(f"Directory for {config_name} already exists and --skip-if-exists is enabled. Skipping execution.")
+            return
     
     try:
         # Load configuration
