@@ -125,32 +125,59 @@ def main():
     paths = ExperimentPaths(config_name)
     configure_logging(args.log, log_path=f"{paths.logs}/experiment.log")
 
-    # Check if we should skip because files exist
+    # # Check if we should skip because files exist
+    # if args.skip_if_exists:
+    #     # Get the base experiments directory
+    #     # This would typically be the parent directory of your paths.plots
+    #     experiments_dir = os.path.dirname(os.path.dirname(paths.plots))
+        
+    #     # # Create search pattern using just the config_name
+    #     # search_pattern = f"{experiments_dir}/{config_name}*/plots"
+        
+    #     # # Search for files
+    #     # all_accuracy_files = glob.glob(f"{search_pattern}/accuracy_*.png")
+    #     # all_loss_files = glob.glob(f"{search_pattern}/loss_*.png")
+        
+    #     # if all_accuracy_files and all_loss_files:
+    #     #     logger.info(f"Output PNG files for {config_name} already exist and --skip-if-exists is enabled. Skipping execution.")
+    #     #     return 
+        
+    #     # Create search pattern for directories starting with config_name
+    #     search_pattern = f"{experiments_dir}/{config_name}*"
+        
+    #     # Check if any directory matching the pattern exists
+    #     matching_dirs = glob.glob(search_pattern)
+        
+    #     if matching_dirs:
+    #         logger.info(f"Directory for {config_name} already exists and --skip-if-exists is enabled. Skipping execution.")
+    #         return
+    
     if args.skip_if_exists:
         # Get the base experiments directory
-        # This would typically be the parent directory of your paths.plots
         experiments_dir = os.path.dirname(os.path.dirname(paths.plots))
         
-        # # Create search pattern using just the config_name
-        # search_pattern = f"{experiments_dir}/{config_name}*/plots"
+        # Create search pattern using the config_name
+        search_pattern = f"{experiments_dir}/{config_name}*/plots"
         
-        # # Search for files
-        # all_accuracy_files = glob.glob(f"{search_pattern}/accuracy_*.png")
-        # all_loss_files = glob.glob(f"{search_pattern}/loss_*.png")
+        # Search for output files
+        all_accuracy_files = glob.glob(f"{search_pattern}/accuracy_*.png")
+        all_loss_files = glob.glob(f"{search_pattern}/loss_*.png")
         
-        # if all_accuracy_files and all_loss_files:
-        #     logger.info(f"Output PNG files for {config_name} already exist and --skip-if-exists is enabled. Skipping execution.")
-        #     return 
-        
-        # Create search pattern for directories starting with config_name
-        search_pattern = f"{experiments_dir}/{config_name}*"
-        
-        # Check if any directory matching the pattern exists
-        matching_dirs = glob.glob(search_pattern)
-        
-        if matching_dirs:
-            logger.info(f"Directory for {config_name} already exists and --skip-if-exists is enabled. Skipping execution.")
+        if all_accuracy_files and all_loss_files:
+            logger.info(f"Output PNG files for {config_name} already exist and --skip-if-exists is enabled. Skipping execution.")
             return
+        
+        # Check for running indicator file
+        running_files = glob.glob(f"{experiments_dir}/{config_name}*/.running")
+        if running_files:
+            logger.info(f"Found .running indicator file for {config_name}. Another process is likely working on this configuration. Skipping.")
+            return
+            
+        # Create running indicator file
+        run_dir = os.path.join(paths.base_dir, '.running')
+        with open(run_dir, 'w') as f:
+            f.write(f"Started at {datetime.now().isoformat()}")
+        logger.debug(f"Created running indicator file at {run_dir}")
     
     try:
         # Load configuration
@@ -246,6 +273,19 @@ def main():
         cleanup_processes()
         sys.exit(1)
     finally:
+        # Remove or rename the running indicator file
+        run_dir = os.path.join(paths.base_dir, '.running')
+        if os.path.exists(run_dir):
+            # Option 1: Simply remove the file
+            os.remove(run_dir)
+            logger.debug("Removed .running indicator file")
+            
+        # Option 2: Rename to .done with completion timestamp
+        # done_file = os.path.join(paths.base_dir, '.done')
+        # with open(done_file, 'w') as f:
+        #     f.write(f"Completed at {datetime.now().isoformat()}")
+        # os.remove(run_dir)
+        # logger.debug("Renamed .running to .done")
         cleanup_processes()
 
 
