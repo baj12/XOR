@@ -85,7 +85,7 @@ class Config:
 class ExperimentPaths:
     def __init__(self, config_name: str):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_dir = os.path.expanduser(f"~/Google Drive/My Drive/Mora/XOR/experiments/{config_name}_{timestamp}")
+        base_dir = os.path.expanduser(f"~/My Drive/Mora/XOR/experiments/{config_name}_{timestamp}")
 
         # Create attribute for each path
         self.base_dir = base_dir
