@@ -7,7 +7,7 @@ RESOURCE_DIR="$PROJECT_DIR/logs/resources"
 PROGRESS_FILE="$PROJECT_DIR/experiment_progress.txt"
 FAILED_FILE="$PROJECT_DIR/failed_experiments.txt"
 CONFIG_DIR="$PROJECT_DIR/config/yaml"
-PYTHON_ENV="xorProject-test"
+PYTHON_ENV="xorProject"
 
 
 # Default number of parallel jobs
@@ -41,7 +41,7 @@ echo "Log file: \$log_file"
 cd "\$PROJECT_DIR"
 
 # Run the experiment
-conda run -n xorProject-test python src/main.py \\
+conda run -n xorProject python src/main.py \\
     --config "\$config_file" \\
     --log DEBUG \\
     --skip-if-exists \\

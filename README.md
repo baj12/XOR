@@ -39,12 +39,20 @@ The purpose is to better understand how DL works, including neural network optim
 
 ## Usage
 
+
+### generate config files
+
+
+
 ### Generate Data
 
 Generate the XOR dataset using the data generator script:
 
 ```sh
 python src/data_generator.py
+
+for fp in config/yaml/config_*.yaml; do echo $fp ;python src/data_generator.py --config  $fp; done
+
 ```
 
 ### Run the Main Script
