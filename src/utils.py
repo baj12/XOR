@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import librosa
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import soundfile as sf
 import tensorflow as tf
 import yaml
 
@@ -71,6 +73,16 @@ class DataConfig:
     class_distribution: float
     dataset_size: int
     use_gpu: bool = True
+    samples_per_file: int = 1000  
+@dataclass
+class AudioConfig:
+    sample_rate: int
+    segment_duration: float
+    hop_length: int
+    n_fft: int
+    n_mels: int
+    n_mfcc: int
+    feature_types: List[str]
 
 
 @dataclass
@@ -78,8 +90,10 @@ class Config:
     experiment: ExperimentConfig
     data: DataConfig
     ga: GAConfig
+    audio: AudioConfig  # Add this line
     model: ModelConfig
     metrics: dict
+
 
 
 class ExperimentPaths:
@@ -100,6 +114,48 @@ class ExperimentPaths:
             os.makedirs(path, exist_ok=True)
             logger.debug(f"Created directory: {path}")
 
+# Add audio validation function
+def validate_audio_file(filepath, config: Config):
+    """Validate audio feature file"""
+    if not os.path.isfile(filepath):
+        raise ValueError(f"File '{filepath}' does not exist.")
+
+    try:
+        df = pd.read_csv(filepath)
+        
+        if df.empty:
+            raise ValueError("The CSV file is empty.")
+
+        # Check for feature columns and label column
+        feature_columns = [col for col in df.columns if col.startswith('feature_')]
+        if not feature_columns:
+            raise ValueError("No feature columns found in the CSV file.")
+        
+        if 'label' not in df.columns:
+            raise ValueError("CSV file must contain a 'label' column.")
+
+        # Validate data types
+        for col in feature_columns:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                raise ValueError(f"Feature column '{col}' must contain numeric values.")
+
+        if not pd.api.types.is_integer_dtype(df['label']):
+            raise ValueError("Column 'label' must contain integer values.")
+
+        # Check label values
+        unique_labels = df['label'].unique()
+        if not all(label in [0, 1] for label in unique_labels):
+            raise ValueError("Labels must be 0 or 1.")
+
+        logger.info(f"Audio dataset validation successful:")
+        logger.info(f"Total samples: {len(df)}")
+        logger.info(f"Feature dimensions: {len(feature_columns)}")
+        logger.info(f"Label distribution: {df['label'].value_counts().to_dict()}")
+        
+        return df
+
+    except Exception as e:
+        raise ValueError(f"Error reading CSV file: {str(e)}")
 
 def get_output_dirs(config_name):
     """
@@ -219,20 +275,28 @@ def configure_logging(log_level=None, log_path=None):
     return logger
 
 
-def save_results(self, best_individual, logbook, dirs):
-    """
-    Save GA results using standardized directory structure
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_path = f"{dirs['results']}/ga_results_{timestamp}.pkl"
-
-    with open(results_path, 'wb') as f:
-        pickle.dump({
-            'best_individual': best_individual,
-            'logbook': logbook,
-            'config_name': self.config_name,
-            'timestamp': timestamp
-        }, f)
+def save_results(best_individual, logbook, paths, timestamp=None):
+    """Save GA results with timestamp."""
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    results_path = f"{paths.results}/ga_results_{timestamp}.pkl"
+    
+    results_data = {
+        'best_individual': best_individual,
+        'logbook': logbook,
+        'timestamp': timestamp,
+        'fitness_values': best_individual.fitness.values if best_individual else None
+    }
+    
+    try:
+        with open(results_path, 'wb') as f:
+            pickle.dump(results_data, f)
+        logger.info(f"Results saved to {results_path}")
+        return results_path
+    except Exception as e:
+        logger.error(f"Failed to save results: {e}")
+        return None
 
 
 def load_config(config_path: str) -> Config:
@@ -244,16 +308,61 @@ def load_config(config_path: str) -> Config:
 
     experiment_config = ExperimentConfig(**config_dict['experiment'])
     data_config = DataConfig(**config_dict['data'])
+    audio_config = AudioConfig(**config_dict['audio'])
     ga_config = GAConfig(**config_dict['ga'])
     model_config = ModelConfig(**config_dict['model'])
 
     return Config(
         experiment=experiment_config,
         data=data_config,
+        audio=audio_config,
         ga=ga_config,
         model=model_config,
         metrics=config_dict.get('metrics', {})
     )
+
+
+def validate_audio_file(filepath, config: Config):
+    """Validate audio feature file"""
+    if not os.path.isfile(filepath):
+        raise ValueError(f"File '{filepath}' does not exist.")
+
+    try:
+        df = pd.read_csv(filepath)
+        
+        if df.empty:
+            raise ValueError("The CSV file is empty.")
+
+        # Check for feature columns and label column
+        feature_columns = [col for col in df.columns if col.startswith('feature_')]
+        if not feature_columns:
+            raise ValueError("No feature columns found in the CSV file.")
+        
+        if 'label' not in df.columns:
+            raise ValueError("CSV file must contain a 'label' column.")
+
+        # Validate data types
+        for col in feature_columns:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                raise ValueError(f"Feature column '{col}' must contain numeric values.")
+
+        if not pd.api.types.is_integer_dtype(df['label']):
+            raise ValueError("Column 'label' must contain integer values.")
+
+        # Check label values
+        unique_labels = df['label'].unique()
+        if not all(label in [0, 1] for label in unique_labels):
+            raise ValueError("Labels must be 0 or 1.")
+
+        logger.info(f"Audio dataset validation successful:")
+        logger.info(f"Total samples: {len(df)}")
+        logger.info(f"Feature dimensions: {len(feature_columns)}")
+        logger.info(f"Label distribution: {df['label'].value_counts().to_dict()}")
+        
+        return df
+
+    except Exception as e:
+        raise ValueError(f"Error reading CSV file: {str(e)}")
 
 
 def plot_results(logbook):
@@ -407,7 +516,27 @@ def load_results(filepath='results/ga_results.pkl'):
     with open(filepath, 'rb') as f:
         data = pickle.load(f)
     logger.debug(f"Results loaded from {filepath}")
+    required_keys = ['best_individual', 'logbook']
+    missing_keys = [key for key in required_keys if key not in data]
+    if missing_keys:
+        logger.warning(f"Missing keys in loaded data: {missing_keys}")
     return data
+
+
+def find_latest_checkpoint(paths):
+    """Find the latest checkpoint file."""
+    latest_checkpoint = f"{paths.results}/latest_checkpoint.pkl"
+    if os.path.exists(latest_checkpoint):
+        return latest_checkpoint
+    
+    checkpoint_pattern = f"{paths.results}/checkpoint_gen_*.pkl"
+    checkpoint_files = glob.glob(checkpoint_pattern)
+    
+    if checkpoint_files:
+        latest_checkpoint = max(checkpoint_files, key=os.path.getmtime)
+        return latest_checkpoint
+    
+    return None
 
 
 def get_total_size(obj, seen=None):
@@ -553,3 +682,17 @@ def _write_dict(d: dict, file, indent: int = 0):
             _write_dict(value, file, indent + 1)
         else:
             file.write('    ' * indent + f"{key}: {value}\n")
+
+
+
+def find_latest_results(paths):
+    """Find the latest results file."""
+    results_pattern = f"{paths.results}/ga_results_*.pkl"
+    result_files = glob.glob(results_pattern)
+    
+    if result_files:
+        latest_result = max(result_files, key=os.path.getmtime)
+        return latest_result
+    
+    return None
+

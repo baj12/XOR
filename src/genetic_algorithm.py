@@ -33,15 +33,17 @@ Functions:
 # from memory_profiler import memory_usage, profile
 
 
-import gc
 import contextlib
+import gc
 import json
 import logging
 import multiprocessing as mp
 import os
+import pickle
 import random
 import signal
 import sys
+import time
 import traceback
 import uuid
 from collections import defaultdict
@@ -49,26 +51,29 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
+
 import matplotlib.pyplot as plt
-import numpy as np  # Added for handling weights
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 from deap import algorithms, base, creator, tools
 from pympler import asizeof
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.models import Sequential  # Added for model manipulation
+from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
+
 from model import build_model, get_optimizer
-from utils import Config, get_total_size, save_model_and_history
 from plotRawData import plot_train_test_with_decision_boundary
+from universal_plots import (create_feature_importance_plot,
+                             create_universal_classification_plots)
+from utils import Config, get_total_size, save_model_and_history
 
+# TensorFlow configuration
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
 
-tf.config.threading.set_intra_op_parallelism_threads(
-    1)  # Set the number of threads for TensorFlow
-
-tf.config.threading.set_inter_op_parallelism_threads(
-    1)  # Set the number of threads for TensorFlow
+logger = logging.getLogger(__name__)
 
 
 # this disables GPU
@@ -115,7 +120,7 @@ fitness_counter = 0
 @contextmanager
 def managed_pool(max_workers):
     """Improved process pool management with proper resource cleanup"""
-    ctx = mp.get_context('spawn')  # Use spawn context explicitly
+    ctx = mp.get_context('spawn')
     executor = ProcessPoolExecutor(
         max_workers=max_workers,
         initializer=init_worker,
@@ -125,19 +130,15 @@ def managed_pool(max_workers):
     try:
         yield executor
     finally:
-        # Graceful shutdown sequence
         executor.shutdown(wait=True, cancel_futures=True)
-
-        # Clean up any remaining processes
         for child in mp.active_children():
             try:
                 child.terminate()
                 child.join(timeout=1.0)
             except Exception as e:
                 logger.debug(f"Error cleaning up child process: {e}")
-
-        # Clear TensorFlow session
         tf.keras.backend.clear_session()
+
 
 
 @contextlib.contextmanager
@@ -220,6 +221,7 @@ def evaluate_population(self, population, timeout=60):
             if not hasattr(ind, 'fitness') or not ind.fitness.valid:
                 ind.fitness.values = (0.0,)
         return population
+
 
 
 def init_worker():
@@ -380,17 +382,117 @@ class GeneticAlgorithm:
         self.X_val = X_val
         self.y_train = y_train
         self.y_val = y_val
-        self.df = df  # Store the full DataFrame
+        self.df = df
         self.model = build_model(config.model)
         self.total_weights = self.calculate_total_weights()
         self.setup_deap()
         self.pool = mp.Pool(processes=self.config.ga.n_processes)
         self.toolbox.register("map", self.pool.map)
-        self.fitness_history = []  # To store fitness of all individuals per generation
+        self.fitness_history = []
         self.counters = defaultdict(int)
         self.pool = None
         self.processes = []
         self.paths = paths
+        
+        # Resume-related attributes
+        self.current_generation = 0
+        self.population = None
+        self.hall_of_fame = None
+        self.logbook = None
+
+    def save_checkpoint(self, generation, population, hof, logbook):
+        """Save current state for resume functionality"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        checkpoint_path = f"{self.paths.results}/checkpoint_gen_{generation}_{timestamp}.pkl"
+        
+        checkpoint_data = {
+            'generation': generation,
+            'population': population,
+            'hall_of_fame': hof,
+            'logbook': logbook,
+            'fitness_history': self.fitness_history,
+            'config': self.config,
+            'total_weights': self.total_weights,
+            'random_state': random.getstate(),
+            'numpy_random_state': np.random.get_state(),
+            'timestamp': timestamp
+        }
+        
+        try:
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump(checkpoint_data, f)
+            logger.info(f"Checkpoint saved to {checkpoint_path}")
+            
+            # Also save as latest checkpoint
+            latest_checkpoint_path = f"{self.paths.results}/latest_checkpoint.pkl"
+            with open(latest_checkpoint_path, 'wb') as f:
+                pickle.dump(checkpoint_data, f)
+            
+            return checkpoint_path
+        except Exception as e:
+            logger.error(f"Failed to save checkpoint: {e}")
+            return None
+
+    def load_checkpoint(self, checkpoint_path):
+        """Load checkpoint for resume"""
+        try:
+            with open(checkpoint_path, 'rb') as f:
+                checkpoint_data = pickle.load(f)
+            
+            self.current_generation = checkpoint_data['generation']
+            self.population = checkpoint_data['population']
+            self.hall_of_fame = checkpoint_data['hall_of_fame']
+            self.logbook = checkpoint_data['logbook']
+            self.fitness_history = checkpoint_data.get('fitness_history', [])
+            
+            # Restore random states
+            if 'random_state' in checkpoint_data:
+                random.setstate(checkpoint_data['random_state'])
+            if 'numpy_random_state' in checkpoint_data:
+                np.random.set_state(checkpoint_data['numpy_random_state'])
+            
+            logger.info(f"Checkpoint loaded from {checkpoint_path}")
+            logger.info(f"Resuming from generation {self.current_generation}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            return False
+
+    def _evaluate_population(self, population):
+        """Evaluate population with timeout protection"""
+        timeout = self.config.ga.max_time_per_ind
+        
+        with managed_pool(max_workers=self.config.ga.n_processes) as executor:
+            futures = {
+                executor.submit(
+                    eval_individual,
+                    individual=ind,
+                    config=self.config,
+                    X_train=self.X_train,
+                    X_val=self.X_val,
+                    y_train=self.y_train,
+                    y_val=self.y_val,
+                    df=self.df
+                ): ind for ind in population
+            }
+
+            count = 0
+            for future in as_completed(futures, timeout=timeout + 1):
+                count += 1
+                individual = futures[future]
+                try:
+                    fitness = future.result(timeout=timeout)
+                    individual.fitness.values = fitness
+                    logger.debug(f"Evaluated individual {count}: {fitness}")
+                except TimeoutError:
+                    logger.warning(f"Evaluation timeout for individual {count}")
+                    individual.fitness.values = (0.0,)
+                except Exception as e:
+                    logger.error(f"Error evaluating individual {count}: {e}")
+                    individual.fitness.values = (0.0,)
+
+        return population
 
     def calculate_total_weights(self) -> int:
         """
@@ -488,6 +590,7 @@ class GeneticAlgorithm:
                     f"Process {pid}: Failed to write to {filename}: {e}")
 
     def train_best_individual(self, individual):
+        """Train the best individual and return model and history"""
         model = build_model(self.config.model)
 
         # Set weights from individual
@@ -502,24 +605,11 @@ class GeneticAlgorithm:
             idx += size
         model.set_weights(weight_tuples)
 
-        # Prepare training data with noise features
-        if self.config.experiment.noise_dimensions > 0:
-            noise_cols = [
-                f'noise_{i+1}' for i in range(self.config.experiment.noise_dimensions)]
-            X_train_full = np.column_stack([
-                self.X_train,
-                self.df[noise_cols].values[: len(self.X_train)]
-            ])
-            X_val_full = np.column_stack([
-                self.X_val,
-                self.df[noise_cols].values[len(self.X_train): len(
-                    self.X_train) + len(self.X_val)]
-            ])
-        else:
-            X_train_full = self.X_train
-            X_val_full = self.X_val
+        # For audio data, we use the features directly
+        X_train_full = self.X_train
+        X_val_full = self.X_val
 
-        # Train model with full feature set
+        # Train model
         history = model.fit(
             X_train_full, self.y_train,
             epochs=self.config.ga.epochs,
@@ -530,7 +620,7 @@ class GeneticAlgorithm:
 
         return model, history
 
-    def run(self):
+    def run(self, resume_from=None ):
         """
         Execute the Genetic Algorithm.
 
@@ -538,6 +628,57 @@ class GeneticAlgorithm:
         - pop (list): Final population.
         - log (Logbook): Logbook containing statistics of the evolution.
         """
+        # Initialize or resume
+        if resume_from is not None:
+            if isinstance(resume_from, str):
+                # It's a file path
+                if not self.load_checkpoint(resume_from):
+                    logger.warning("Failed to load checkpoint, starting fresh")
+                    resume_from = None
+            elif isinstance(resume_from, dict):
+                # It's checkpoint data
+                try:
+                    self.current_generation = resume_from['generation']
+                    self.population = resume_from['population']
+                    self.hall_of_fame = resume_from['hall_of_fame']
+                    self.logbook = resume_from['logbook']
+                    self.fitness_history = resume_from.get('fitness_history', [])
+                    
+                    if 'random_state' in resume_from:
+                        random.setstate(resume_from['random_state'])
+                    if 'numpy_random_state' in resume_from:
+                        np.random.set_state(resume_from['numpy_random_state'])
+                    
+                    logger.info(f"Resuming from generation {self.current_generation}")
+                except Exception as e:
+                    logger.error(f"Failed to resume from data: {e}")
+                    resume_from = None
+                # Initialize if not resuming
+                
+        if resume_from is None:
+            self.current_generation = 0
+            self.population = self.toolbox.population(n=self.config.ga.population_size)
+            self.hall_of_fame = tools.HallOfFame(1)
+            self.logbook = tools.Logbook()
+            self.logbook.header = ["gen", "avg", "std", "min", "max"]
+            
+            # Initial population evaluation
+            self._evaluate_population(self.population)
+            self.hall_of_fame.update(self.population)
+            
+            # Log initial statistics
+            stats = tools.Statistics(lambda ind: ind.fitness.values)
+            stats.register("avg", np.mean)
+            stats.register("std", np.std)
+            stats.register("min", np.min)
+            stats.register("max", np.max)
+            
+            record = stats.compile(self.population)
+            self.logbook.record(gen=0, **record)
+            logger.info(f"Generation 0 Statistics: {record}")
+            
+            # Save initial checkpoint
+
         # Initialize population and Hall of Fame
         pop = self.toolbox.population(n=self.config.ga.population_size)
         hof = tools.HallOfFame(1)
@@ -625,8 +766,16 @@ class GeneticAlgorithm:
         logger.debug(
             f"size of self.toolbox: {asizeof.asizeof(self.toolbox)} bytes")
 
+        # Continue evolution
+        stats = tools.Statistics(lambda ind: ind.fitness.values)
+        stats.register("avg", np.mean)
+        stats.register("std", np.std)
+        stats.register("min", np.min)
+        stats.register("max", np.max)
+
+        start_gen = self.current_generation + 1
         # generations after the parent gen
-        for gen in range(1, self.config.ga.ngen + 1):
+        for gen in range(start_gen, self.config.ga.ngen + 1):
             logger.info(f"Generation {gen} started.")
 
             # Select the next generation individuals
@@ -722,6 +871,11 @@ class GeneticAlgorithm:
 
             logger.debug(f"Generation {gen} Statistics: {record}")
             self.record_fitness(pop, gen)
+            # Record fitness and save checkpoint every 5 generations
+            if gen % 5 == 0:
+                self.save_checkpoint(gen, self.population, self.hall_of_fame, self.logbook)
+
+            self.current_generation = gen
 
             # local_vars = locals()
             # for var_name, var_value in local_vars.items():
@@ -741,7 +895,9 @@ class GeneticAlgorithm:
         # Save fitness history to a JSON file in the results directory
         # with open(fitness_filepath, 'w') as f:
         #    json.dump(self.fitness_history, f)
-
+        # Final checkpoint
+        self.save_checkpoint(self.current_generation, self.population, self.hall_of_fame, self.logbook)
+        
         # Retrieve the best individual from Hall of Fame
         best_individual = hof[0] if hof else None
         logger.info(
@@ -754,24 +910,34 @@ class GeneticAlgorithm:
         # Save the best model and its training history
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_model_and_history(best_model, best_history, self.paths, timestamp)
-        # Generate and save the final classification plot
-        plot_path = f"{self.paths.plots}/final_classification.png"
-
+        
+        # Create universal classification plots using UMAP
         try:
-            plot_train_test_with_decision_boundary(
-                model=best_model,
-                X_train=self.X_train,
-                X_test=self.X_val,
-                y_train=self.y_train,
-                y_test=self.y_val,
-                df=self.df,  # Pass the full DataFrame
-                config=self.config,  # Pass the configuration
-                save_path=plot_path
+            plot_path = f"{self.paths.plots}/universal_classification_{timestamp}.png"
+            
+            # Determine appropriate title prefix
+            if self.X_train.shape[1] == 2:
+                title_prefix = "XOR Classification"
+            else:
+                title_prefix = f"Audio Classification ({self.X_train.shape[1]}D)"
+            
+            # Create UMAP plots
+            X_umap, reducer = create_universal_classification_plots(
+                best_model, 
+                self.X_train, 
+                self.X_val, 
+                self.y_train, 
+                self.y_val, 
+                plot_path,
+                title_prefix=title_prefix
             )
-            logger.info(f"Final classification plot saved to {plot_path}")
+            
+            # Create feature importance plot
+            feature_plot_path = f"{self.paths.plots}/feature_importance_{timestamp}.png"
+            create_feature_importance_plot(best_model, feature_plot_path)
+            
         except Exception as e:
-            logger.error(
-                f"Failed to generate final classification plot: {str(e)}", exc_info=True)
+            logger.error(f"Failed to generate universal classification plots: {e}")
 
         return best_individual, master_logbook
 
