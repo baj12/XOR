@@ -8,9 +8,12 @@ Handles continuous audio classification from stereo WAV streams where:
 
 from .stereo_channel_processor import StereoChannelProcessor, simulate_continuous_stream
 from .feature_database import FeatureDatabase
+from .continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuousStream
 
 __all__ = [
     'StereoChannelProcessor',
     'FeatureDatabase',
-    'simulate_continuous_stream'
+    'simulate_continuous_stream',
+    'ContinuousIngestionPipeline',
+    'SimulatedContinuousStream'
 ]

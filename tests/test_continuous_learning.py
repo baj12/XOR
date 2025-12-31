@@ -20,6 +20,7 @@ if src_path not in sys.path:
 
 from continuous.stereo_channel_processor import StereoChannelProcessor, simulate_continuous_stream
 from continuous.feature_database import FeatureDatabase
+from continuous.continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuousStream
 
 
 class MockAudioConfig:
@@ -336,6 +337,152 @@ class TestIntegration(unittest.TestCase):
         print(f"  Processed: {total_samples} samples")
         print(f"  Positive: {n_positive}, Negative: {n_negative}")
         print(f"  Database: {stats['db_size_mb']:.2f} MB")
+
+
+class TestContinuousIngestion(unittest.TestCase):
+    """Test continuous ingestion pipeline"""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up test fixtures"""
+        cls.config = MockConfig()
+
+        # Find real WAV file
+        data_dir = Path(__file__).parent.parent / 'data'
+        wav_files = list(data_dir.glob('*.wav'))
+
+        if len(wav_files) == 0:
+            raise unittest.SkipTest("No WAV files found")
+
+        cls.test_wav = wav_files[0]
+
+        # Create temp database
+        cls.temp_dir = tempfile.mkdtemp(prefix='test_ingestion_')
+        cls.db_path = Path(cls.temp_dir) / 'ingestion.db'
+
+        print(f"\nIngestion test using: {cls.test_wav}")
+
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up"""
+        shutil.rmtree(cls.temp_dir)
+
+    def test_ingest_single_file(self):
+        """Test ingesting a single stereo WAV file"""
+        # Create unique database for this test
+        db_path = Path(self.temp_dir) / 'test_single.db'
+
+        # Create pipeline
+        pipeline = ContinuousIngestionPipeline(
+            self.config,
+            db_path,
+            max_samples_per_channel=10
+        )
+
+        # Ingest file
+        result = pipeline.ingest_file(self.test_wav)
+
+        # Verify success
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('total_samples', result)
+        self.assertGreater(result['total_samples'], 0)
+        self.assertEqual(result['samples_left'], 10)
+        self.assertEqual(result['samples_right'], 10)
+
+        # Verify metrics
+        metrics = pipeline.get_metrics()
+        self.assertEqual(metrics['files_processed'], 1)
+        self.assertEqual(metrics['total_samples'], 20)
+        self.assertEqual(metrics['error_count'], 0)
+
+        # Verify database
+        db_stats = pipeline.get_database_stats()
+        self.assertEqual(db_stats['total_samples'], 20)
+
+        print(f"✓ Ingested single file: {result['total_samples']} samples")
+
+    def test_ingest_batch(self):
+        """Test batch ingestion"""
+        # Find multiple WAV files
+        data_dir = Path(__file__).parent.parent / 'data'
+        wav_files = list(data_dir.glob('*.wav'))[:2]  # Use up to 2 files
+
+        if len(wav_files) < 2:
+            self.skipTest("Need at least 2 WAV files for batch test")
+
+        # Create unique database for this test
+        db_path = Path(self.temp_dir) / 'test_batch.db'
+
+        # Create pipeline
+        pipeline = ContinuousIngestionPipeline(
+            self.config,
+            db_path,
+            max_samples_per_channel=5
+        )
+
+        # Ingest batch
+        results = pipeline.ingest_batch(wav_files)
+
+        # Verify all succeeded
+        self.assertEqual(len(results), len(wav_files))
+        for result in results:
+            self.assertEqual(result['status'], 'success')
+
+        # Verify metrics
+        metrics = pipeline.get_metrics()
+        self.assertEqual(metrics['files_processed'], len(wav_files))
+        self.assertEqual(metrics['total_samples'], len(wav_files) * 10)  # 5 per channel × 2 channels
+
+        print(f"✓ Batch ingestion: {len(results)} files, {metrics['total_samples']} samples")
+
+    def test_simulated_continuous_stream(self):
+        """Test simulated continuous stream generation"""
+        temp_output = Path(self.temp_dir) / 'chunks'
+
+        # Create simulated stream
+        simulator = SimulatedContinuousStream(
+            self.test_wav,
+            temp_output,
+            chunk_duration_minutes=5
+        )
+
+        # Generate chunks
+        chunks = simulator.generate_chunks(self.config)
+
+        # Verify chunks created
+        self.assertGreater(len(chunks), 0, "Should create at least one chunk")
+
+        for chunk_path in chunks:
+            self.assertTrue(chunk_path.exists(), f"Chunk should exist: {chunk_path}")
+            self.assertTrue(chunk_path.suffix == '.wav', "Should be WAV file")
+
+        print(f"✓ Simulated stream: {len(chunks)} chunks")
+
+    def test_ingestion_error_handling(self):
+        """Test error handling for invalid files"""
+        # Create unique database for this test
+        db_path = Path(self.temp_dir) / 'test_errors.db'
+
+        # Create pipeline
+        pipeline = ContinuousIngestionPipeline(
+            self.config,
+            db_path,
+            max_samples_per_channel=5
+        )
+
+        # Try to ingest non-existent file
+        fake_path = Path('/tmp/nonexistent.wav')
+        result = pipeline.ingest_file(fake_path)
+
+        # Verify error recorded
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('error', result)
+
+        # Verify error in metrics
+        metrics = pipeline.get_metrics()
+        self.assertGreater(metrics['error_count'], 0)
+
+        print(f"✓ Error handling working: {metrics['error_count']} error(s) recorded")
 
 
 if __name__ == '__main__':
