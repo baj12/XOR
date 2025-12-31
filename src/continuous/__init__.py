@@ -12,6 +12,8 @@ from .continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuo
 from .incremental_trainer import IncrementalTrainer
 from .monitoring_reporter import SystemMonitor, WeeklyReport
 from .orchestrator import ContinuousLearningOrchestrator, EmailReporter
+from .visualization import ContinuousVisualizer
+from .model_manager import ModelManager
 
 __all__ = [
     'StereoChannelProcessor',
@@ -23,5 +25,7 @@ __all__ = [
     'SystemMonitor',
     'WeeklyReport',
     'ContinuousLearningOrchestrator',
-    'EmailReporter'
+    'EmailReporter',
+    'ContinuousVisualizer',
+    'ModelManager'
 ]

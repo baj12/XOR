@@ -1,9 +1,49 @@
-# XOR 
+# XOR & Audio Classification System
+
+## 📚 Quick Navigation
+
+**Choose your path:**
+
+### 🔄 **Continuous Learning (24/7 Audio Classification)**
+→ **[START HERE: Beginner-Friendly Guide](README_CONTINUOUS.md)**
+
+For autonomous learning from streaming audio:
+- 🎯 **Best for**: Long-term audio experiments, bioacoustics, sound monitoring
+- 📧 Automated email reports
+- 🧠 Self-improving AI models
+- ⚠️ Automatic alerts and drift detection
+
+**Documentation**:
+- [📖 Quick Start Guide (Non-Experts)](README_CONTINUOUS.md) ← Start here!
+- [⚙️ Implementation Status](docs/CONTINUOUS_LEARNING_STATUS.md)
+- [🏗️ Architecture & Strategy](docs/CONTINUOUS_LEARNING_STRATEGY.md)
+- [📧 Email Setup Guide](docs/EMAIL_SETUP.md)
+
+---
+
+### 🎯 **XOR Classification (Research & Experiments)**
+→ **[XOR Mode Documentation](docs/XOR_MODE_QUICK_START.md)**
+
+For neural network research and genetic algorithm optimization:
+- 🔬 **Best for**: Understanding deep learning, GA optimization, research
+- 📊 Advanced visualizations (UMAP, t-SNE, decision boundaries)
+- 🧬 Genetic algorithm hyperparameter optimization
+
+**Documentation**:
+- [📖 XOR Quick Start](docs/XOR_MODE_QUICK_START.md)
+- [🎵 Audio Mode Quick Start](docs/AUDIO_MODE_QUICK_START.md)
+- [👨‍💻 Developer Guide (CLAUDE.md)](CLAUDE.md)
+
+---
 
 ## Overview
-Solving the XOR problem using deep learning (DL) and genetic algorithms (GA).
 
-The purpose is to better understand how DL works, including neural network optimization using GA, network design, and many other aspects. This is a work in progress.
+This project provides two main capabilities:
+
+1. **Continuous Learning System** (NEW): 24/7 autonomous audio classification from stereo streams
+2. **XOR Classification**: Research platform for understanding deep learning and genetic algorithms
+
+Both use genetic algorithms (GA) for neural network optimization and TensorFlow/Keras for training.
 
 ## Installation
 
