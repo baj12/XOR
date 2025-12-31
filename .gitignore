@@ -48,6 +48,7 @@ sorted*.txt
 last*.txt
 mprofil*.dat
 config/*.yaml
+!config/continuous_learning_config.yaml
 config/yaml/*
 config/yaml/*.yaml
 experiments/*

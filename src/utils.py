@@ -93,14 +93,74 @@ class AudioConfig:
     feature_types: List[str]
     audio_files: Optional[Dict] = None  # Add this field
 
+
+@dataclass
+class OrchestrationConfig:
+    """Configuration for continuous learning orchestration"""
+    # Data ingestion
+    data_check_interval_minutes: int = 60
+    audio_source_dir: Optional[str] = None
+    min_duration_sec: float = 60.0
+    max_files_per_day: int = 10
+
+    # Training schedule
+    training_day_of_week: int = 0  # 0=Monday, 6=Sunday
+    training_hour: int = 2  # Hour to run training (0-23)
+    min_samples_for_training: int = 1000
+    training_window_weeks: int = 4
+
+    # Update strategy
+    update_mode: str = 'hybrid'  # 'incremental', 'full_retrain', 'hybrid'
+    incremental_epochs: int = 5
+    incremental_lr: float = 0.0001
+    full_retrain_frequency_weeks: int = 4
+
+    # Monitoring and alerts
+    alert_on_drift: bool = True
+    alert_on_performance_drop: bool = True
+    performance_drop_threshold: float = 0.05
+    drift_score_threshold: float = 0.5
+
+    # Email settings
+    email_recipients: List[str] = None
+    email_smtp_server: str = 'smtp.gmail.com'
+    email_smtp_port: int = 587
+    email_sender: str = 'noreply@example.com'
+    email_password: Optional[str] = None  # Use environment variable!
+
+    # Reporting
+    weekly_report_day: str = 'Monday'
+    weekly_report_time: str = '09:00'
+
+    # Storage management
+    raw_retention_days: int = 90
+    archive_location: Optional[str] = None
+    disk_warning_threshold: float = 0.9
+
+    # Visualization
+    create_visualizations: bool = True
+    visualizations_dir: str = 'visualizations/continuous'
+
+    def __post_init__(self):
+        """Initialize mutable defaults"""
+        if self.email_recipients is None:
+            self.email_recipients = []
+
+
 @dataclass
 class Config:
     experiment: ExperimentConfig
     data: DataConfig
     ga: GAConfig
-    audio: AudioConfig  # Add this line
+    audio: AudioConfig
     model: ModelConfig
-    metrics: dict
+    orchestration: Optional[OrchestrationConfig] = None
+    metrics: dict = None
+
+    def __post_init__(self):
+        """Initialize optional fields with defaults"""
+        if self.metrics is None:
+            self.metrics = {}
 
 
 
@@ -310,6 +370,9 @@ def save_results(best_individual, logbook, paths, timestamp=None):
 def load_config(config_path: str) -> Config:
     """
     Load configuration from YAML file.
+
+    Supports both standard experiment configs and continuous learning configs.
+    The orchestration section is optional.
     """
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
@@ -320,12 +383,18 @@ def load_config(config_path: str) -> Config:
     ga_config = GAConfig(**config_dict['ga'])
     model_config = ModelConfig(**config_dict['model'])
 
+    # Parse orchestration config if present (for continuous learning)
+    orchestration_config = None
+    if 'orchestration' in config_dict:
+        orchestration_config = OrchestrationConfig(**config_dict['orchestration'])
+
     return Config(
         experiment=experiment_config,
         data=data_config,
         audio=audio_config,
         ga=ga_config,
         model=model_config,
+        orchestration=orchestration_config,
         metrics=config_dict.get('metrics', {})
     )
 
