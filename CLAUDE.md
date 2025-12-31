@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project uses deep learning (DL) and genetic algorithms (GA) to solve classification problems. Originally designed for the XOR problem, it has been extended to support **audio classification** from WAV files. The system uses DEAP for genetic algorithm optimization and TensorFlow/Keras for neural network training.
 
+**NEW**: The project now includes a **continuous learning system** for autonomous 24/7 audio classification. See [Continuous Learning Status](docs/CONTINUOUS_LEARNING_STATUS.md) and [Strategy](docs/CONTINUOUS_LEARNING_STRATEGY.md).
+
 ## Critical Distinction: Input Data Types
 
 The codebase handles **two fundamentally different input types**:
@@ -331,6 +333,8 @@ For complete guides on using this system, see:
 
 - **[XOR Mode Quick Start](docs/XOR_MODE_QUICK_START.md)**: Complete guide for XOR classification including configuration, data generation, visualization interpretation, and troubleshooting
 - **[Audio Mode Quick Start](docs/AUDIO_MODE_QUICK_START.md)**: Complete guide for audio/WAV file classification including rubix44 dataset usage, feature extraction, QC reports, and audio-specific troubleshooting
+- **[Continuous Learning Status](docs/CONTINUOUS_LEARNING_STATUS.md)**: Implementation status, gaps, and production readiness for the continuous learning system
+- **[Continuous Learning Strategy](docs/CONTINUOUS_LEARNING_STRATEGY.md)**: Architecture and design document for autonomous 24/7 audio classification
 
 These guides cover:
 
@@ -341,6 +345,59 @@ These guides cover:
 - Common issues and solutions
 - Performance optimization
 - Advanced usage patterns
+
+## Continuous Learning System
+
+The `src/continuous/` module provides autonomous 24/7 audio classification from stereo WAV streams.
+
+### Key Features
+
+- **Stereo Processing**: Left channel = positive class, Right channel = negative class
+- **Incremental Training**: Sliding window learning (configurable weeks)
+- **Drift Detection**: Monitors feature distribution changes over time
+- **Email Alerts**: Performance drops, drift, storage issues
+- **Weekly Reports**: Comprehensive performance summaries
+- **Autonomous Operation**: Runs indefinitely with scheduled training
+
+### Quick Start
+
+```bash
+# Activate environment
+source /Users/bernd/miniconda3/bin/activate xorProject
+
+# Run tests to verify installation
+python -m pytest tests/test_continuous_learning.py -v
+
+# Run orchestrator (24/7 mode)
+python -m src.continuous.orchestrator \
+    --config config/continuous_learning_config.yaml \
+    --db data/continuous/features.db \
+    --model-dir models/continuous \
+    --report-dir reports/continuous \
+    --log INFO
+```
+
+### Module Structure
+
+```text
+src/continuous/
+├── stereo_channel_processor.py    # WAV → Features per channel
+├── feature_database.py             # SQLite storage with full schema
+├── continuous_ingestion.py         # Data ingestion pipeline
+├── incremental_trainer.py          # Sliding window training
+├── monitoring_reporter.py          # Health monitoring & reports
+└── orchestrator.py                 # 24/7 autonomous coordinator
+```
+
+### Status
+
+- ✅ **All 30 tests passing** (2min 37sec runtime)
+- ✅ Core functionality complete and tested
+- ⚠️ Configuration management needs setup (see [Status doc](docs/CONTINUOUS_LEARNING_STATUS.md))
+- ⚠️ Email configuration required for alerts
+- ❌ Visualization generation not yet implemented
+
+For detailed status, gaps, and next steps, see **[CONTINUOUS_LEARNING_STATUS.md](docs/CONTINUOUS_LEARNING_STATUS.md)**.
 
 ## Coding Conventions and Best Practices
 
