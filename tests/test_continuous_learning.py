@@ -21,6 +21,7 @@ if src_path not in sys.path:
 from continuous.stereo_channel_processor import StereoChannelProcessor, simulate_continuous_stream
 from continuous.feature_database import FeatureDatabase
 from continuous.continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuousStream
+from continuous.incremental_trainer import IncrementalTrainer
 
 
 class MockAudioConfig:
@@ -34,6 +35,10 @@ class MockAudioConfig:
 class MockConfig:
     def __init__(self):
         self.audio = MockAudioConfig()
+        # Model parameters for trainer
+        self.hidden_layers = [64, 32]
+        self.activation = 'relu'
+        self.learning_rate = 0.001
 
 
 class TestStereoChannelProcessor(unittest.TestCase):
@@ -483,6 +488,151 @@ class TestContinuousIngestion(unittest.TestCase):
         self.assertGreater(metrics['error_count'], 0)
 
         print(f"✓ Error handling working: {metrics['error_count']} error(s) recorded")
+
+
+class TestIncrementalTrainer(unittest.TestCase):
+    """Test incremental model trainer"""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up test fixtures"""
+        cls.config = MockConfig()
+
+        # Create temp directories
+        cls.temp_dir = tempfile.mkdtemp(prefix='test_trainer_')
+        cls.db_path = Path(cls.temp_dir) / 'trainer.db'
+        cls.model_dir = Path(cls.temp_dir) / 'models'
+
+        # Create database with sample data
+        cls.db = FeatureDatabase(cls.db_path)
+
+        # Insert training data (simulate continuous ingestion)
+        n_samples = 200
+        n_features = 748  # Actual feature dimension from processor
+        X = np.random.randn(n_samples, n_features).astype(np.float32)
+        y = np.random.randint(0, 2, n_samples)
+        offsets = np.arange(n_samples, dtype=np.float32)
+
+        # Insert data with recent timestamps
+        timestamp = datetime.now()
+        cls.db.insert_features_batch(
+            X, y, channel=0, source_file='test_training.wav',
+            offsets=offsets, timestamp=timestamp
+        )
+
+        print(f"\nTrainer test: {n_samples} samples in database")
+
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up"""
+        shutil.rmtree(cls.temp_dir)
+
+    def test_load_training_data(self):
+        """Test loading data from database"""
+        trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+
+        # Load last 4 weeks of data
+        X, y = trainer.load_training_data(weeks=4)
+
+        # Verify
+        self.assertGreater(len(X), 0, "Should load samples")
+        self.assertEqual(X.shape[1], 748, "Should have correct feature dimension")
+        self.assertEqual(len(y), len(X), "Should have matching labels")
+
+        print(f"✓ Loaded {len(X)} samples for training")
+
+    def test_prepare_data(self):
+        """Test data preparation (normalization and splitting)"""
+        trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+
+        X, y = trainer.load_training_data(weeks=4)
+        X_train, X_val, X_test, y_train, y_val, y_test, scaler = trainer.prepare_data(X, y)
+
+        # Verify splits
+        total = len(X_train) + len(X_val) + len(X_test)
+        self.assertEqual(total, len(X), "Splits should sum to total")
+
+        # Verify normalization
+        self.assertAlmostEqual(X_train.mean(), 0.0, delta=0.5, msg="Should be normalized")
+        self.assertAlmostEqual(X_train.std(), 1.0, delta=0.5, msg="Should be normalized")
+
+        # Verify scaler stored
+        self.assertIsNotNone(scaler)
+
+        print(f"✓ Data prepared: train={len(X_train)}, val={len(X_val)}, test={len(X_test)}")
+
+    def test_build_model(self):
+        """Test model architecture building"""
+        trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+
+        input_dim = 748
+        model = trainer.build_model(input_dim)
+
+        # Verify model structure
+        self.assertIsNotNone(model)
+        self.assertEqual(model.input_shape[1], input_dim)
+        self.assertEqual(model.output_shape[1], 1)  # Binary classification
+
+        # Verify compiled
+        self.assertIsNotNone(model.optimizer)
+
+        print(f"✓ Model built: {len(model.layers)} layers")
+
+    def test_full_training(self):
+        """Test full training from scratch"""
+        trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+
+        # Train with minimal epochs for speed
+        result = trainer.train_full(weeks=4, epochs=3, batch_size=32)
+
+        # Verify training succeeded
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('test_accuracy', result)
+        self.assertIn('test_auc', result)
+        self.assertIn('model_path', result)
+
+        # Verify model was saved
+        model_path = Path(result['model_path'])
+        self.assertTrue(model_path.exists(), "Model file should exist")
+
+        # Verify accuracy is reasonable (random baseline ~0.5)
+        self.assertGreater(result['test_accuracy'], 0.3, "Accuracy should be better than random")
+
+        print(f"✓ Full training complete: {result['test_accuracy']:.4f} accuracy")
+
+    def test_model_saving_and_loading(self):
+        """Test model persistence"""
+        trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+
+        # Train and save
+        trainer.train_full(weeks=4, epochs=2, batch_size=32)
+
+        # Create new trainer and load
+        new_trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+        loaded_model = new_trainer.load_latest_model()
+
+        # Verify loaded
+        self.assertIsNotNone(loaded_model)
+        self.assertIsNotNone(new_trainer.scaler)
+
+        print(f"✓ Model saved and loaded successfully")
+
+    def test_evaluation_on_recent_data(self):
+        """Test model evaluation"""
+        trainer = IncrementalTrainer(self.config, self.db_path, self.model_dir)
+
+        # Train first
+        trainer.train_full(weeks=4, epochs=2, batch_size=32)
+
+        # Evaluate
+        eval_result = trainer.evaluate_on_recent_data(weeks=1)
+
+        # Verify
+        self.assertIn('accuracy', eval_result)
+        self.assertIn('auc', eval_result)
+        self.assertGreater(eval_result['accuracy'], 0.3)
+
+        print(f"✓ Evaluation: {eval_result['accuracy']:.4f} accuracy, {eval_result['auc']:.4f} AUC")
 
 
 if __name__ == '__main__':
