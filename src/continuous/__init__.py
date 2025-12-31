@@ -10,6 +10,7 @@ from .stereo_channel_processor import StereoChannelProcessor, simulate_continuou
 from .feature_database import FeatureDatabase
 from .continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuousStream
 from .incremental_trainer import IncrementalTrainer
+from .monitoring_reporter import SystemMonitor, WeeklyReport
 
 __all__ = [
     'StereoChannelProcessor',
@@ -17,5 +18,7 @@ __all__ = [
     'simulate_continuous_stream',
     'ContinuousIngestionPipeline',
     'SimulatedContinuousStream',
-    'IncrementalTrainer'
+    'IncrementalTrainer',
+    'SystemMonitor',
+    'WeeklyReport'
 ]

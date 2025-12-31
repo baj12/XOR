@@ -22,6 +22,7 @@ from continuous.stereo_channel_processor import StereoChannelProcessor, simulate
 from continuous.feature_database import FeatureDatabase
 from continuous.continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuousStream
 from continuous.incremental_trainer import IncrementalTrainer
+from continuous.monitoring_reporter import SystemMonitor, WeeklyReport, SystemHealthMetrics
 
 
 class MockAudioConfig:
@@ -633,6 +634,146 @@ class TestIncrementalTrainer(unittest.TestCase):
         self.assertGreater(eval_result['accuracy'], 0.3)
 
         print(f"✓ Evaluation: {eval_result['accuracy']:.4f} accuracy, {eval_result['auc']:.4f} AUC")
+
+
+class TestMonitoringReporter(unittest.TestCase):
+    """Test monitoring and reporting system"""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up test fixtures"""
+        # Create temp directory and database
+        cls.temp_dir = tempfile.mkdtemp(prefix='test_monitor_')
+        cls.db_path = Path(cls.temp_dir) / 'monitor.db'
+        cls.db = FeatureDatabase(cls.db_path)
+
+        # Insert sample data
+        n_samples = 300
+        n_features = 748
+        X = np.random.randn(n_samples, n_features).astype(np.float32)
+        y = np.random.randint(0, 2, n_samples)
+        offsets = np.arange(n_samples, dtype=np.float32)
+
+        # Insert with recent timestamp
+        cls.db.insert_features_batch(
+            X, y, channel=0, source_file='test_monitor.wav',
+            offsets=offsets, timestamp=datetime.now()
+        )
+
+        # Insert a training run
+        cls.db.insert_training_run({
+            'run_timestamp': datetime.now(),
+            'model_path': '/tmp/test_model.keras',
+            'data_start_date': datetime.now() - timedelta(weeks=4),
+            'data_end_date': datetime.now(),
+            'n_training_samples': 200,
+            'n_validation_samples': 50,
+            'train_accuracy': 0.85,
+            'val_accuracy': 0.82,
+            'test_accuracy': 0.80,
+            'roc_auc': 0.88,
+            'update_mode': 'full',
+            'duration_seconds': 120.5
+        })
+
+        print(f"\nMonitor test: {n_samples} samples, 1 training run")
+
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up"""
+        shutil.rmtree(cls.temp_dir)
+
+    def test_database_health_metrics(self):
+        """Test database health calculation"""
+        health = SystemHealthMetrics.calculate_database_health(self.db)
+
+        # Verify metrics
+        self.assertIn('total_samples', health)
+        self.assertIn('class_0_count', health)
+        self.assertIn('class_1_count', health)
+        self.assertIn('balance_ratio', health)
+        self.assertIn('db_size_gb', health)
+        self.assertIn('storage_utilization_pct', health)
+
+        # Verify reasonable values
+        self.assertGreater(health['total_samples'], 0)
+        self.assertGreaterEqual(health['balance_ratio'], 0)
+        self.assertLessEqual(health['balance_ratio'], 1)
+
+        print(f"✓ Database health: {health['total_samples']} samples, "
+              f"{health['balance_ratio']:.2f} balance ratio")
+
+    def test_growth_rate_calculation(self):
+        """Test growth rate metrics"""
+        growth = SystemHealthMetrics.calculate_growth_rate(self.db, days=7)
+
+        # Verify metrics
+        self.assertIn('samples_per_day', growth)
+        self.assertIn('projected_monthly_samples', growth)
+
+        print(f"✓ Growth rate: {growth['samples_per_day']:.0f} samples/day")
+
+    def test_drift_detection(self):
+        """Test data drift detection"""
+        drift = SystemHealthMetrics.detect_data_drift(self.db, weeks=4)
+
+        # Verify metrics
+        self.assertIn('drift_detected', drift)
+        self.assertIsInstance(drift['drift_detected'], bool)
+
+        if drift.get('reason') != 'insufficient_data':
+            self.assertIn('max_mean_shift', drift)
+            self.assertIn('drift_severity', drift)
+
+        print(f"✓ Drift detection: {'detected' if drift['drift_detected'] else 'none'}")
+
+    def test_weekly_report_generation(self):
+        """Test weekly report generation"""
+        monitor = SystemMonitor(self.db_path)
+        report = monitor.generate_weekly_report()
+
+        # Verify report structure
+        self.assertIn('report_time', report)
+        self.assertIn('database_health', report)
+        self.assertIn('growth_metrics', report)
+        self.assertIn('drift_analysis', report)
+        self.assertIn('training_history', report)
+
+        # Verify training history
+        self.assertGreater(len(report['training_history']), 0)
+
+        print(f"✓ Weekly report generated: {len(report['training_history'])} training runs")
+
+    def test_report_text_formatting(self):
+        """Test report formatting as text"""
+        monitor = SystemMonitor(self.db_path)
+        report = monitor.generate_weekly_report()
+        text = monitor.format_report_as_text(report)
+
+        # Verify text contains key sections
+        self.assertIn('DATABASE HEALTH', text)
+        self.assertIn('GROWTH METRICS', text)
+        self.assertIn('DATA DRIFT', text)
+        self.assertIn('MODEL PERFORMANCE', text)
+
+        print(f"✓ Report formatted as text ({len(text)} characters)")
+
+    def test_alert_checking(self):
+        """Test alert detection"""
+        monitor = SystemMonitor(self.db_path)
+        report = monitor.generate_weekly_report()
+        alerts = monitor.check_alerts(report)
+
+        # Verify alerts is a list
+        self.assertIsInstance(alerts, list)
+
+        # Each alert should have required fields
+        for alert in alerts:
+            self.assertIn('severity', alert)
+            self.assertIn('type', alert)
+            self.assertIn('message', alert)
+
+        print(f"✓ Alert checking: {len(alerts)} alert(s) detected")
 
 
 if __name__ == '__main__':
