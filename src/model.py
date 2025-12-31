@@ -3,10 +3,11 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.callbacks import (EarlyStopping, ReduceLROnPlateau,
-                                        TensorBoard)
+from tensorflow.keras.callbacks import (Callback, EarlyStopping,
+                                        ReduceLROnPlateau, TensorBoard)
 from tensorflow.keras.layers import Add, Concatenate, Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
@@ -16,6 +17,69 @@ from utils import Config, ModelConfig
 
 logger = logging.getLogger(__name__)
 
+class RealTimePlottingCallback(Callback):
+    """Custom callback that plots and saves accuracy after each epoch."""
+    
+    def __init__(self, plot_path, plot_loss_path=None):
+        super().__init__()
+        self.plot_path = plot_path
+        self.plot_loss_path = plot_loss_path
+        self.epochs = []
+        self.train_acc = []
+        self.val_acc = []
+        self.train_loss = []
+        self.val_loss = []
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(plot_path), exist_ok=True)
+        if plot_loss_path:
+            os.makedirs(os.path.dirname(plot_loss_path), exist_ok=True)
+    
+    def on_epoch_end(self, epoch, logs=None):
+        # Store the metrics
+        self.epochs.append(epoch + 1)
+        self.train_acc.append(logs.get('accuracy', 0))
+        self.val_acc.append(logs.get('val_accuracy', 0))
+        self.train_loss.append(logs.get('loss', 0))
+        self.val_loss.append(logs.get('val_loss', 0))
+        
+        # Create accuracy plot
+        plt.figure(figsize=(10, 6))
+        plt.plot(self.epochs, self.train_acc, 'b-', label='Training', linewidth=2)
+        plt.plot(self.epochs, self.val_acc, 'r-', label='Validation', linewidth=2)
+        plt.title('Model Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Save accuracy plot (overwrite)
+        plt.savefig(self.plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Create loss plot if path provided
+        if self.plot_loss_path:
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.epochs, self.train_loss, 'b-', label='Training', linewidth=2)
+            plt.plot(self.epochs, self.val_loss, 'r-', label='Validation', linewidth=2)
+            plt.title('Model Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            
+            # Save loss plot (overwrite)
+            plt.savefig(self.plot_loss_path, dpi=300, bbox_inches='tight')
+            plt.close()
+        
+        # Log current metrics
+        logger.debug(f"Epoch {epoch + 1} - "
+                    f"loss: {logs['loss']:.4f}, "
+                    f"accuracy: {logs['accuracy']:.4f}, "
+                    f"val_loss: {logs['val_loss']:.4f}, "
+                    f"val_accuracy: {logs['val_accuracy']:.4f}")
 
 def setup_device():
     """Configure device based on availability"""

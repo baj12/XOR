@@ -63,21 +63,292 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
 
-from model import build_model, get_optimizer
+from model import RealTimePlottingCallback, build_model
 from plotRawData import plot_train_test_with_decision_boundary
 from universal_plots import (create_feature_importance_plot,
                              create_universal_classification_plots)
 from utils import Config, get_total_size, save_model_and_history
 
 # TensorFlow configuration
-tf.config.threading.set_intra_op_parallelism_threads(1)
-tf.config.threading.set_inter_op_parallelism_threads(1)
+try:
+    tf.config.threading.set_intra_op_parallelism_threads(1)
+    tf.config.threading.set_inter_op_parallelism_threads(1)
+except RuntimeError:
+    # Already initialized - happens in testing
+    pass
 
 logger = logging.getLogger(__name__)
 
 
 # this disables GPU
 # tf.config.set_visible_devices([], 'GPU')
+
+class GAProgressPlotter:
+    """Real-time plotter for genetic algorithm progress."""
+    
+    def __init__(self, plot_path, paths):
+        self.plot_path = plot_path
+        self.paths = paths
+        self.generations = []
+        self.best_fitness = []
+        self.avg_fitness = []
+        self.worst_fitness = []
+        self.std_fitness = []
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(plot_path), exist_ok=True)
+    
+    def update_and_plot(self, generation, population, logbook_record):
+        """Update data and create/save plots after each generation."""
+        
+        # Extract fitness values from population
+        fitness_values = [ind.fitness.values[0] for ind in population]
+        
+        # Store generation data
+        self.generations.append(generation)
+        self.best_fitness.append(max(fitness_values))
+        self.avg_fitness.append(np.mean(fitness_values))
+        self.worst_fitness.append(min(fitness_values))
+        self.std_fitness.append(np.std(fitness_values))
+        
+        # Create comprehensive GA progress plot
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+        
+        # Plot 1: Fitness Evolution
+        ax1.plot(self.generations, self.best_fitness, 'g-', label='Best', linewidth=2)
+        ax1.plot(self.generations, self.avg_fitness, 'b-', label='Average', linewidth=2)
+        ax1.plot(self.generations, self.worst_fitness, 'r-', label='Worst', linewidth=1, alpha=0.7)
+        ax1.fill_between(self.generations, 
+                        np.array(self.avg_fitness) - np.array(self.std_fitness),
+                        np.array(self.avg_fitness) + np.array(self.std_fitness),
+                        alpha=0.2, color='blue', label='±1 Std Dev')
+        ax1.set_xlabel('Generation')
+        ax1.set_ylabel('Fitness')
+        ax1.set_title('GA Fitness Evolution')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot 2: Current Population Distribution
+        ax2.hist(fitness_values, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+        ax2.axvline(np.mean(fitness_values), color='red', linestyle='--', 
+                   label=f'Mean: {np.mean(fitness_values):.4f}')
+        ax2.axvline(max(fitness_values), color='green', linestyle='--', 
+                   label=f'Best: {max(fitness_values):.4f}')
+        ax2.set_xlabel('Fitness')
+        ax2.set_ylabel('Count')
+        ax2.set_title(f'Population Fitness Distribution (Gen {generation})')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # Plot 3: Diversity Over Time (Standard Deviation)
+        ax3.plot(self.generations, self.std_fitness, 'purple', linewidth=2)
+        ax3.set_xlabel('Generation')
+        ax3.set_ylabel('Fitness Standard Deviation')
+        ax3.set_title('Population Diversity Over Time')
+        ax3.grid(True, alpha=0.3)
+        
+        # Plot 4: Improvement Rate
+        if len(self.best_fitness) > 1:
+            improvement = np.diff(self.best_fitness)
+            ax4.plot(self.generations[1:], improvement, 'orange', linewidth=2)
+            ax4.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+            ax4.set_xlabel('Generation')
+            ax4.set_ylabel('Fitness Improvement')
+            ax4.set_title('Generation-to-Generation Improvement')
+        else:
+            ax4.text(0.5, 0.5, 'Waiting for data...', 
+                    transform=ax4.transAxes, ha='center', va='center')
+            ax4.set_title('Generation-to-Generation Improvement')
+        ax4.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Save plot (overwrite previous)
+        plt.savefig(self.plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Also save data to CSV for external analysis
+        data_path = f"{self.paths.results}/ga_progress.csv"
+        progress_df = pd.DataFrame({
+            'generation': self.generations,
+            'best_fitness': self.best_fitness,
+            'avg_fitness': self.avg_fitness,
+            'worst_fitness': self.worst_fitness,
+            'std_fitness': self.std_fitness
+        })
+        progress_df.to_csv(data_path, index=False)
+        
+        logger.info(f"Gen {generation}: Best={max(fitness_values):.4f}, "
+                   f"Avg={np.mean(fitness_values):.4f}, "
+                   f"Std={np.std(fitness_values):.4f}")
+
+    def create_hyperparameter_impact_plot(self, logbook, config, output_path):
+        """
+        Visualize hyperparameter evolution and impact during GA run.
+
+        Creates a multi-panel visualization showing:
+        - Convergence analysis
+        - Parameter evolution
+        - Performance metrics
+        - Resource utilization
+
+        Args:
+            logbook: DEAP logbook with generation statistics
+            config: Configuration object
+            output_path: Path to save the plot
+        """
+        logger.info("Creating hyperparameter impact visualization...")
+
+        # Extract data from logbook
+        gen = [record['gen'] for record in logbook]
+        avg_fitness = [record['avg'] for record in logbook]
+        max_fitness = [record['max'] for record in logbook]
+        min_fitness = [record['min'] for record in logbook]
+        std_fitness = [record['std'] for record in logbook]
+
+        # Create figure with 6 subplots
+        fig = plt.figure(figsize=(18, 12))
+        gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+
+        fig.suptitle('Genetic Algorithm: Hyperparameter Impact Analysis',
+                     fontsize=16, fontweight='bold')
+
+        # ===== 1. Convergence Analysis =====
+        ax1 = fig.add_subplot(gs[0, :])
+
+        ax1.plot(gen, max_fitness, 'g-', label='Best Fitness', linewidth=2.5, marker='o')
+        ax1.plot(gen, avg_fitness, 'b-', label='Average Fitness', linewidth=2, marker='s')
+        ax1.fill_between(gen,
+                        np.array(avg_fitness) - np.array(std_fitness),
+                        np.array(avg_fitness) + np.array(std_fitness),
+                        alpha=0.3, color='blue', label='±1 Std Dev')
+
+        ax1.set_xlabel('Generation', fontsize=11)
+        ax1.set_ylabel('Fitness', fontsize=11)
+        ax1.set_title('Convergence Analysis: Fitness Evolution', fontsize=13, fontweight='bold')
+        ax1.legend(loc='best', fontsize=10)
+        ax1.grid(True, alpha=0.3)
+
+        # Add convergence annotation
+        if len(gen) > 1:
+            final_improvement = max_fitness[-1] - max_fitness[0]
+            ax1.annotate(f'Total Improvement: {final_improvement:+.4f}',
+                        xy=(gen[-1], max_fitness[-1]),
+                        xytext=(gen[-1]*0.7, max(max_fitness)*0.9),
+                        arrowprops=dict(arrowstyle='->', color='green', lw=2),
+                        fontsize=10, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
+
+        # ===== 2. Population Diversity Over Time =====
+        ax2 = fig.add_subplot(gs[1, 0])
+
+        ax2.plot(gen, std_fitness, 'purple', linewidth=2.5, marker='d')
+        ax2.set_xlabel('Generation', fontsize=11)
+        ax2.set_ylabel('Standard Deviation', fontsize=11)
+        ax2.set_title('Population Diversity', fontsize=13, fontweight='bold')
+        ax2.grid(True, alpha=0.3)
+
+        # Add diversity trend line
+        if len(gen) > 2:
+            z = np.polyfit(gen, std_fitness, 1)
+            p = np.poly1d(z)
+            ax2.plot(gen, p(gen), "r--", alpha=0.8, label=f'Trend: {z[0]:.4f}x + {z[1]:.4f}')
+            ax2.legend(fontsize=9)
+
+        # ===== 3. Convergence Rate (First Derivative) =====
+        ax3 = fig.add_subplot(gs[1, 1])
+
+        if len(gen) > 1:
+            convergence_rate = np.diff(max_fitness)
+            ax3.plot(gen[1:], convergence_rate, 'orange', linewidth=2, marker='x')
+            ax3.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+            ax3.set_xlabel('Generation', fontsize=11)
+            ax3.set_ylabel('Fitness Change', fontsize=11)
+            ax3.set_title('Convergence Rate (∆Fitness per Generation)', fontsize=13, fontweight='bold')
+            ax3.grid(True, alpha=0.3)
+
+            # Highlight plateau
+            plateau_threshold = 0.001
+            if len(convergence_rate) > 5:
+                recent_changes = convergence_rate[-5:]
+                if all(abs(c) < plateau_threshold for c in recent_changes):
+                    ax3.text(0.5, 0.95, 'Converged (Plateau Detected)',
+                            transform=ax3.transAxes, ha='center', va='top',
+                            fontsize=10, color='red', fontweight='bold',
+                            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+        else:
+            ax3.text(0.5, 0.5, 'Insufficient data',
+                    transform=ax3.transAxes, ha='center', va='center', fontsize=12)
+
+        # ===== 4. GA Parameters Summary =====
+        ax4 = fig.add_subplot(gs[2, 0])
+        ax4.axis('off')
+
+        params_text = "GA Configuration\n" + "="*40 + "\n\n"
+        params_text += f"Population Size:   {config.ga.population_size}\n"
+        params_text += f"Generations:       {config.ga.ngen}\n"
+        params_text += f"Crossover Prob:    {config.ga.cxpb:.2f}\n"
+        params_text += f"Mutation Prob:     {config.ga.mutpb:.2f}\n"
+        params_text += f"Epochs/Individual: {config.ga.epochs}\n"
+        params_text += f"Parallel Processes: {config.ga.n_processes}\n"
+        params_text += f"Max Time/Ind (s):  {config.ga.max_time_per_ind}\n\n"
+
+        params_text += "Model Configuration\n" + "="*40 + "\n\n"
+        if hasattr(config.model, 'hidden_layers'):
+            params_text += f"Architecture:      {config.model.hidden_layers}\n"
+        else:
+            params_text += f"Hidden Layers:     {config.model.hl1}, {config.model.hl2}\n"
+        params_text += f"Activation:        {config.model.activation}\n"
+        params_text += f"Optimizer:         {config.model.optimizer}\n"
+        params_text += f"Learning Rate:     {config.model.lr:.6f}\n"
+        params_text += f"Batch Size:        {config.model.batch_size}\n"
+
+        ax4.text(0.1, 0.9, params_text, transform=ax4.transAxes,
+                fontsize=9, verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
+
+        # ===== 5. Performance Metrics =====
+        ax5 = fig.add_subplot(gs[2, 1])
+        ax5.axis('off')
+
+        metrics_text = "Performance Metrics\n" + "="*40 + "\n\n"
+        metrics_text += f"Initial Best:      {max_fitness[0]:.6f}\n"
+        metrics_text += f"Final Best:        {max_fitness[-1]:.6f}\n"
+        metrics_text += f"Improvement:       {max_fitness[-1] - max_fitness[0]:+.6f}\n"
+        metrics_text += f"Relative Gain:     {((max_fitness[-1]/max_fitness[0])-1)*100:+.2f}%\n\n"
+
+        metrics_text += f"Initial Average:   {avg_fitness[0]:.6f}\n"
+        metrics_text += f"Final Average:     {avg_fitness[-1]:.6f}\n"
+        metrics_text += f"Avg Improvement:   {avg_fitness[-1] - avg_fitness[0]:+.6f}\n\n"
+
+        metrics_text += f"Initial Diversity: {std_fitness[0]:.6f}\n"
+        metrics_text += f"Final Diversity:   {std_fitness[-1]:.6f}\n"
+        metrics_text += f"Diversity Change:  {std_fitness[-1] - std_fitness[0]:+.6f}\n\n"
+
+        # Calculate effective generations (where improvement happened)
+        if len(gen) > 1:
+            improvements = [max_fitness[i] > max_fitness[i-1] for i in range(1, len(max_fitness))]
+            effective_gens = sum(improvements)
+            metrics_text += f"Effective Gens:    {effective_gens}/{len(gen)-1} ({effective_gens/(len(gen)-1)*100:.1f}%)\n"
+
+        ax5.text(0.1, 0.9, metrics_text, transform=ax5.transAxes,
+                fontsize=9, verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.3))
+
+        plt.tight_layout()
+
+        # Save plot
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        logger.info(f"Hyperparameter impact plot saved to: {output_path}")
+
+        return {
+            'initial_best': max_fitness[0],
+            'final_best': max_fitness[-1],
+            'improvement': max_fitness[-1] - max_fitness[0],
+            'convergence_rate': 'converged' if len(gen) > 5 and all(abs(c) < 0.001 for c in np.diff(max_fitness)[-5:]) else 'improving'
+        }
 
 
 def log_gpu_usage():
@@ -608,6 +879,17 @@ class GeneticAlgorithm:
         # For audio data, we use the features directly
         X_train_full = self.X_train
         X_val_full = self.X_val
+        
+        # ADD REAL-TIME PLOTTING HERE
+        best_model_plot_path = "plots/current_individual_accuracy.png"
+        best_model_loss_path = "plots/current_individual_loss.png"
+       
+        callbacks = [
+            RealTimePlottingCallback(
+                plot_path=best_model_plot_path,
+                plot_loss_path=best_model_loss_path
+            )
+        ]
 
         # Train model
         history = model.fit(
@@ -615,6 +897,7 @@ class GeneticAlgorithm:
             epochs=self.config.ga.epochs,
             batch_size=self.config.model.batch_size,
             validation_data=(X_val_full, self.y_val),
+            callbacks=callbacks,
             verbose=1
         )
 
@@ -706,6 +989,11 @@ class GeneticAlgorithm:
         logger.debug(mp.get_start_method())
         pid = os.getpid()
         timeout = self.config.ga.max_time_per_ind
+
+        # Initialize GA progress plotter
+        progress_plot_path = f"{self.paths.plots}/ga_progress_realtime.png"
+        ga_plotter = GAProgressPlotter(progress_plot_path, self.paths)
+    
 
         # Parallel environment for evaluating individuals
         with managed_pool(max_workers=self.config.ga.n_processes) as executor:
@@ -868,6 +1156,7 @@ class GeneticAlgorithm:
             # Compile and record statistics
             record = stats.compile(pop)
             master_logbook.record(gen=gen, **record)
+            ga_plotter.update_and_plot(gen, pop, record)
 
             logger.debug(f"Generation {gen} Statistics: {record}")
             self.record_fitness(pop, gen)
@@ -877,13 +1166,6 @@ class GeneticAlgorithm:
 
             self.current_generation = gen
 
-            # local_vars = locals()
-            # for var_name, var_value in local_vars.items():
-            #     logger.debug(
-            #         f" {count} -- Mysize of {var_name} : {sys.getsizeof(var_value)} bytes")
-            # for var_name, var_value in vars(self).items():
-            #     logger.debug(
-            #         f"Mysize variable {var_name} : {sys.getsizeof(var_value)} bytes")
 
         # After recording statistics
         for entry in master_logbook:
@@ -990,7 +1272,7 @@ def eval_individual(individual, config, X_train, X_val, y_train, y_val, df):
         else:
             X_train_full = X_train
             X_val_full = X_val
-
+        
         # Train and evaluate
         history = model.fit(
             X_train_full, y_train,

@@ -1,3 +1,4 @@
+import glob
 import json
 import logging
 import multiprocessing as mp
@@ -65,6 +66,13 @@ class ExperimentConfig:
     noise_dimensions: int
     class_separation: float
     use_gpu: bool = True  # Added here with default value
+    generate_advanced_viz: bool = True  # Enable advanced visualizations
+    viz_include_pca: bool = True  # Include PCA plots
+    viz_include_tsne: bool = False  # Include t-SNE plots (slower)
+    viz_layer_progression: bool = True  # Show layer-by-layer transformations
+    viz_roc_curves: bool = True  # Generate ROC and PR curves
+    viz_statistical_analysis: bool = True  # Statistical tests and confidence intervals
+    viz_hyperparameter_impact: bool = True  # GA hyperparameter analysis
 
 
 @dataclass
@@ -83,7 +91,7 @@ class AudioConfig:
     n_mels: int
     n_mfcc: int
     feature_types: List[str]
-
+    audio_files: Optional[Dict] = None  # Add this field
 
 @dataclass
 class Config:
