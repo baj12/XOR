@@ -11,6 +11,7 @@ from .feature_database import FeatureDatabase
 from .continuous_ingestion import ContinuousIngestionPipeline, SimulatedContinuousStream
 from .incremental_trainer import IncrementalTrainer
 from .monitoring_reporter import SystemMonitor, WeeklyReport
+from .orchestrator import ContinuousLearningOrchestrator, EmailReporter
 
 __all__ = [
     'StereoChannelProcessor',
@@ -20,5 +21,7 @@ __all__ = [
     'SimulatedContinuousStream',
     'IncrementalTrainer',
     'SystemMonitor',
-    'WeeklyReport'
+    'WeeklyReport',
+    'ContinuousLearningOrchestrator',
+    'EmailReporter'
 ]

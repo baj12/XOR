@@ -221,3 +221,4 @@ yarl==1.18.3
 zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1732827521216/work
 librosa>=0.10.0
 soundfile>=0.12.0
+schedule>=1.2.0

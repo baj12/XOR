@@ -776,6 +776,232 @@ class TestMonitoringReporter(unittest.TestCase):
         print(f"✓ Alert checking: {len(alerts)} alert(s) detected")
 
 
+class TestOrchestrator(unittest.TestCase):
+    """Test orchestration and autonomous operation"""
+
+    @classmethod
+    def setUpClass(cls):
+        # Get test WAV file
+        data_dir = Path(__file__).parent.parent / 'data'
+        wav_files = list(data_dir.glob('*.wav'))
+
+        if len(wav_files) == 0:
+            raise unittest.SkipTest("No WAV files found in data/ directory")
+
+        cls.test_wav = wav_files[0]
+        print(f"\nUsing test file: {cls.test_wav}")
+
+        # Create config
+        cls.config = MockConfig()
+
+        # Add orchestration config
+        from dataclasses import dataclass, field
+        from typing import List
+
+        @dataclass
+        class OrchestrationConfig:
+            data_check_interval_minutes: int = 1  # Fast for testing
+            training_day_of_week: int = datetime.now().weekday()
+            training_hour: int = datetime.now().hour
+            min_samples_for_training: int = 10  # Low threshold for testing
+            alert_on_drift: bool = True
+            alert_on_performance_drop: bool = True
+            performance_drop_threshold: float = 0.05
+            email_recipients: List[str] = field(default_factory=lambda: ['test@example.com'])
+            email_smtp_server: str = 'smtp.gmail.com'
+            email_smtp_port: int = 587
+            email_sender: str = 'noreply@example.com'
+            email_password: str = None  # No password for testing
+
+        cls.config.orchestration = OrchestrationConfig()
+
+    def setUp(self):
+        # Create temporary directories
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = Path(self.temp_dir) / 'test_orchestrator.db'
+        self.model_dir = Path(self.temp_dir) / 'models'
+        self.report_dir = Path(self.temp_dir) / 'reports'
+        self.data_dir = Path(self.temp_dir) / 'data'
+        self.data_dir.mkdir(exist_ok=True)
+
+    def tearDown(self):
+        # Clean up
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_orchestrator_initialization(self):
+        """Test orchestrator can be initialized"""
+        from continuous.orchestrator import ContinuousLearningOrchestrator
+
+        orchestrator = ContinuousLearningOrchestrator(
+            config=self.config,
+            db_path=self.db_path,
+            model_dir=self.model_dir,
+            report_dir=self.report_dir,
+            data_dir=self.data_dir
+        )
+
+        # Verify components initialized
+        self.assertIsNotNone(orchestrator.db)
+        self.assertIsNotNone(orchestrator.ingestion)
+        self.assertIsNotNone(orchestrator.trainer)
+        self.assertIsNotNone(orchestrator.monitor)
+        self.assertIsNotNone(orchestrator.email)
+
+        # Verify directories created
+        self.assertTrue(self.model_dir.exists())
+        self.assertTrue(self.report_dir.exists())
+
+        print("✓ Orchestrator initialized with all components")
+
+    def test_data_ingestion_cycle(self):
+        """Test data ingestion in orchestration cycle"""
+        from continuous.orchestrator import ContinuousLearningOrchestrator
+
+        # Create symlink to avoid disk space issues with large files
+        test_file = self.data_dir / 'test.wav'
+        test_file.symlink_to(self.test_wav)
+
+        # Create orchestrator
+        orchestrator = ContinuousLearningOrchestrator(
+            config=self.config,
+            db_path=self.db_path,
+            model_dir=self.model_dir,
+            report_dir=self.report_dir,
+            data_dir=self.data_dir
+        )
+
+        # Run ingestion
+        result = orchestrator.check_and_ingest_data()
+
+        # Verify ingestion
+        self.assertEqual(result['status'], 'success')
+        self.assertGreater(result['files_processed'], 0)
+
+        # Verify data in database
+        from continuous.feature_database import FeatureDatabase
+        db = FeatureDatabase(self.db_path)
+        stats = db.get_database_stats()
+        self.assertGreater(stats['total_samples'], 0)
+
+        print(f"✓ Ingestion cycle: {stats['total_samples']} samples ingested")
+
+    def test_training_schedule(self):
+        """Test training scheduling logic"""
+        from continuous.orchestrator import ContinuousLearningOrchestrator
+        from continuous.continuous_ingestion import ContinuousIngestionPipeline
+
+        # Pre-populate database with data
+        pipeline = ContinuousIngestionPipeline(
+            self.config,
+            self.db_path,
+            max_samples_per_channel=10
+        )
+        pipeline.ingest_file(self.test_wav)
+
+        # Create orchestrator with current day/hour for immediate training
+        orchestrator = ContinuousLearningOrchestrator(
+            config=self.config,
+            db_path=self.db_path,
+            model_dir=self.model_dir,
+            report_dir=self.report_dir
+        )
+
+        # Check if training should run
+        should_train = orchestrator.should_train_now()
+        self.assertTrue(should_train, "Should train with current day/hour and sufficient data")
+
+        print("✓ Training schedule logic working")
+
+    def test_monitoring_cycle(self):
+        """Test monitoring in orchestration cycle"""
+        from continuous.orchestrator import ContinuousLearningOrchestrator
+        from continuous.continuous_ingestion import ContinuousIngestionPipeline
+
+        # Pre-populate database
+        pipeline = ContinuousIngestionPipeline(
+            self.config,
+            self.db_path,
+            max_samples_per_channel=10
+        )
+        pipeline.ingest_file(self.test_wav)
+
+        # Create orchestrator
+        orchestrator = ContinuousLearningOrchestrator(
+            config=self.config,
+            db_path=self.db_path,
+            model_dir=self.model_dir,
+            report_dir=self.report_dir
+        )
+
+        # Run monitoring
+        result = orchestrator.run_monitoring()
+
+        # Verify monitoring results
+        self.assertIn('health', result)
+        self.assertIn('drift', result)
+        self.assertIsInstance(result['health'], dict)
+        self.assertIsInstance(result['drift'], dict)
+
+        print("✓ Monitoring cycle completed successfully")
+
+    def test_email_reporter(self):
+        """Test email reporter (without actually sending)"""
+        from continuous.orchestrator import EmailReporter
+
+        reporter = EmailReporter(self.config)
+
+        # Verify initialization
+        self.assertEqual(len(reporter.recipients), 1)
+        self.assertEqual(reporter.recipients[0], 'test@example.com')
+
+        # Test markdown to HTML conversion
+        markdown = "# Title\n\nParagraph 1\n\nParagraph 2"
+        html = reporter._markdown_to_html(markdown)
+        self.assertIn('<h1>', html)
+        self.assertIn('<p>', html)
+
+        # Test dict formatting
+        test_dict = {'key1': 'value1', 'key2': 42}
+        formatted = reporter._format_dict(test_dict)
+        self.assertIn('key1: value1', formatted)
+        self.assertIn('key2: 42', formatted)
+
+        print("✓ Email reporter initialized and formatting working")
+
+    def test_orchestration_cycle(self):
+        """Test full orchestration cycle"""
+        from continuous.orchestrator import ContinuousLearningOrchestrator
+
+        # Create symlink to avoid disk space issues with large files
+        test_file = self.data_dir / 'test.wav'
+        test_file.symlink_to(self.test_wav)
+
+        # Create orchestrator
+        orchestrator = ContinuousLearningOrchestrator(
+            config=self.config,
+            db_path=self.db_path,
+            model_dir=self.model_dir,
+            report_dir=self.report_dir,
+            data_dir=self.data_dir
+        )
+
+        # Run one cycle (should ingest data and monitor, but not train initially)
+        orchestrator.run_cycle()
+
+        # Verify data was ingested
+        from continuous.feature_database import FeatureDatabase
+        db = FeatureDatabase(self.db_path)
+        stats = db.get_database_stats()
+        self.assertGreater(stats['total_samples'], 0, "Data should be ingested")
+
+        # Verify no errors
+        self.assertEqual(orchestrator.error_count, 0)
+
+        print(f"✓ Full orchestration cycle: {stats['total_samples']} samples, 0 errors")
+
+
 if __name__ == '__main__':
     # Run with verbose output
     unittest.main(verbosity=2)
