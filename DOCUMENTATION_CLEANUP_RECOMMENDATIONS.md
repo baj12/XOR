@@ -145,7 +145,9 @@ These provide quick access to key information:
 6. **QUICKSTART_RECORDING.md** - User quick start
 7. **RUBIX44_SERVER_CHANGES_REQUIRED.md** - API requirements
 8. **UI_FIXES_COMPLETED.md** - UI changelog
-9. **METADATA_QUICK_REFERENCE.md** - Metadata reference
+9. **UI_FIXES_IN_PROGRESS.md** - UI implementation verification
+10. **METADATA_QUICK_REFERENCE.md** - Metadata reference
+11. **DOCUMENTATION_CLEANUP_RECOMMENDATIONS.md** - This file
 
 ## 🔧 Cleanup Script
 
@@ -154,47 +156,75 @@ To execute the recommended cleanup:
 ```bash
 #!/bin/bash
 # cleanup_docs.sh - Archive old documentation
+# SAFE VERSION - Does NOT remove essential files
+
+set -e  # Exit on error
+
+echo "Starting documentation cleanup..."
+echo "This script will ONLY archive session/planning/feature docs"
+echo "Essential documentation files will be preserved"
+echo ""
 
 # Create archive structure
+echo "Creating archive directories..."
 mkdir -p docs/archive/{planning,sessions,features,tests}
 
 # Archive planning docs
-mv CONTINUOUS_ARCHITECTURE.md docs/archive/planning/ 2>/dev/null
-mv CONTINUOUS_IMPLEMENTATION_STATUS.md docs/archive/planning/ 2>/dev/null
-mv CONTINUOUS_RECORDING_PLAN.md docs/archive/planning/ 2>/dev/null
+echo "Archiving planning documents..."
+[ -f CONTINUOUS_ARCHITECTURE.md ] && mv CONTINUOUS_ARCHITECTURE.md docs/archive/planning/
+[ -f CONTINUOUS_IMPLEMENTATION_STATUS.md ] && mv CONTINUOUS_IMPLEMENTATION_STATUS.md docs/archive/planning/
+[ -f CONTINUOUS_RECORDING_PLAN.md ] && mv CONTINUOUS_RECORDING_PLAN.md docs/archive/planning/
+[ -f CONTINUOUS_TEST_ORCHESTRATOR_SUMMARY.md ] && mv CONTINUOUS_TEST_ORCHESTRATOR_SUMMARY.md docs/archive/planning/
 
 # Archive session docs
-mv METADATA_AND_VIEW_FIXED.md docs/archive/sessions/ 2>/dev/null
-mv METADATA_COMPLETE_FLAG_UPDATED.md docs/archive/sessions/ 2>/dev/null
-mv FINAL_METADATA_RESOLUTION.md docs/archive/sessions/ 2>/dev/null
-mv SERVER_RESTART_COMPLETE.md docs/archive/sessions/ 2>/dev/null
-mv QC_PROCESS_STARTED.md docs/archive/sessions/ 2>/dev/null
-mv CONTINUOUS_EXPERIMENT_STARTED.md docs/archive/sessions/ 2>/dev/null
+echo "Archiving session documents..."
+[ -f METADATA_AND_VIEW_FIXED.md ] && mv METADATA_AND_VIEW_FIXED.md docs/archive/sessions/
+[ -f METADATA_COMPLETE_FLAG_UPDATED.md ] && mv METADATA_COMPLETE_FLAG_UPDATED.md docs/archive/sessions/
+[ -f FINAL_METADATA_RESOLUTION.md ] && mv FINAL_METADATA_RESOLUTION.md docs/archive/sessions/
+[ -f SERVER_RESTART_COMPLETE.md ] && mv SERVER_RESTART_COMPLETE.md docs/archive/sessions/
+[ -f QC_PROCESS_STARTED.md ] && mv QC_PROCESS_STARTED.md docs/archive/sessions/
+[ -f CONTINUOUS_EXPERIMENT_STARTED.md ] && mv CONTINUOUS_EXPERIMENT_STARTED.md docs/archive/sessions/
 
 # Archive feature docs
-mv EXPERIMENT_DELETE_ENHANCEMENT.md docs/archive/features/ 2>/dev/null
-mv EXPERIMENT_RERUN_FEATURE.md docs/archive/features/ 2>/dev/null
-mv RECORDING_TIME_ESTIMATION_FEATURE.md docs/archive/features/ 2>/dev/null
-mv CONTINUOUS_UI_ENHANCEMENTS.md docs/archive/features/ 2>/dev/null
+echo "Archiving feature documents..."
+[ -f EXPERIMENT_DELETE_ENHANCEMENT.md ] && mv EXPERIMENT_DELETE_ENHANCEMENT.md docs/archive/features/
+[ -f EXPERIMENT_RERUN_FEATURE.md ] && mv EXPERIMENT_RERUN_FEATURE.md docs/archive/features/
+[ -f RECORDING_TIME_ESTIMATION_FEATURE.md ] && mv RECORDING_TIME_ESTIMATION_FEATURE.md docs/archive/features/
+[ -f CONTINUOUS_UI_ENHANCEMENTS.md ] && mv CONTINUOUS_UI_ENHANCEMENTS.md docs/archive/features/
 
 # Archive test docs
-mv RECORDING_TIME_TEST_RESULTS.md docs/archive/tests/ 2>/dev/null
-mv 24HR_TEST_README.md docs/archive/tests/ 2>/dev/null
-mv CONTINUOUS_TEST_ORCHESTRATOR_SUMMARY.md docs/archive/tests/ 2>/dev/null
+echo "Archiving test documents..."
+[ -f RECORDING_TIME_TEST_RESULTS.md ] && mv RECORDING_TIME_TEST_RESULTS.md docs/archive/tests/
+[ -f 24HR_TEST_README.md ] && mv 24HR_TEST_README.md docs/archive/tests/
 
-# Remove truly redundant files
-rm -f FIXES_APPLIED.md
-rm -f UI_FIXES_IN_PROGRESS.md
-rm -f RECORDING_PANEL_SEPARATION.md
-rm -f RECORDING_UI_EXAMPLE.md
-rm -f WEB_INTERFACE_INTEGRATION.md
-rm -f RUBIX44_QUICK_START.md
-rm -f RUBIX44_TESTING_SUMMARY.md
-rm -f TEST_EXPERIMENT_GUIDE.md
+# Archive redundant/superseded docs (NOT essential files!)
+echo "Archiving redundant documents..."
+[ -f FIXES_APPLIED.md ] && mv FIXES_APPLIED.md docs/archive/sessions/
+[ -f RECORDING_PANEL_SEPARATION.md ] && mv RECORDING_PANEL_SEPARATION.md docs/archive/features/
+[ -f RECORDING_UI_EXAMPLE.md ] && mv RECORDING_UI_EXAMPLE.md docs/archive/features/
+[ -f WEB_INTERFACE_INTEGRATION.md ] && mv WEB_INTERFACE_INTEGRATION.md docs/archive/features/
+[ -f RUBIX44_QUICK_START.md ] && mv RUBIX44_QUICK_START.md docs/archive/features/
+[ -f RUBIX44_TESTING_SUMMARY.md ] && mv RUBIX44_TESTING_SUMMARY.md docs/archive/tests/
+[ -f TEST_EXPERIMENT_GUIDE.md ] && mv TEST_EXPERIMENT_GUIDE.md docs/archive/tests/
 
-echo "Documentation cleanup complete!"
-echo "Archived files moved to docs/archive/"
-echo "Redundant files removed"
+echo ""
+echo "✅ Documentation cleanup complete!"
+echo ""
+echo "📂 Archived files moved to docs/archive/"
+echo "📋 Essential files preserved in root:"
+echo "   - README.md"
+echo "   - README_CONTINUOUS.md"
+echo "   - CLAUDE.md"
+echo "   - CAN_FIX_NOW.md"
+echo "   - IMPLEMENTATION_STATUS.md"
+echo "   - QUICKSTART_RECORDING.md"
+echo "   - RUBIX44_SERVER_CHANGES_REQUIRED.md"
+echo "   - UI_FIXES_COMPLETED.md"
+echo "   - UI_FIXES_IN_PROGRESS.md"
+echo "   - METADATA_QUICK_REFERENCE.md"
+echo "   - DOCUMENTATION_CLEANUP_RECOMMENDATIONS.md"
+echo ""
+echo "Run 'git status' to see changes"
 ```
 
 ## 📊 Before and After
@@ -211,7 +241,7 @@ CONTINUOUS_IMPLEMENTATION_STATUS.md
 ... (34 more)
 ```
 
-### After Cleanup: 9 essential files in root
+### After Cleanup: 11 essential files in root
 
 ```
 README.md
@@ -222,7 +252,9 @@ IMPLEMENTATION_STATUS.md
 QUICKSTART_RECORDING.md
 RUBIX44_SERVER_CHANGES_REQUIRED.md
 UI_FIXES_COMPLETED.md
+UI_FIXES_IN_PROGRESS.md
 METADATA_QUICK_REFERENCE.md
+DOCUMENTATION_CLEANUP_RECOMMENDATIONS.md
 ```
 
 ## ✅ Benefits
@@ -254,5 +286,6 @@ METADATA_QUICK_REFERENCE.md
 ---
 
 **Created:** 2026-01-21
+**Updated:** 2026-01-21 (Fixed script to preserve essential files)
 **Purpose:** Guide for cleaning up root-level documentation
-**Impact:** Reduces root markdown files from 40+ to 9 essential files
+**Impact:** Reduces root markdown files from 40+ to 11 essential files
