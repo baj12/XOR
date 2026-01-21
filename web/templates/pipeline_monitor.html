@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Pipeline Monitor - Recording Management System{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1><i class="bi bi-diagram-3"></i> Pipeline Monitor</h1>
+            <p class="text-muted">Real-time monitoring of the data processing pipeline</p>
+        </div>
+    </div>
+
+    <!-- Pipeline Status Cards -->
+    <div class="row mb-4" id="pipelineStatus">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Pipeline Components</span>
+                    <button class="btn btn-sm btn-primary" onclick="refreshStatus()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> Loading pipeline status...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    Recent Pipeline Activity
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="activityTable">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Component</th>
+                                    <th>Status</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">
+                                        No recent activity
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function refreshStatus() {
+        fetch('/api/pipeline/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayPipelineStatus(data.statuses || []);
+                } else {
+                    showError('pipelineStatus', 'Failed to load pipeline status');
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching pipeline status:', error);
+                showError('pipelineStatus', 'Error loading pipeline status');
+            });
+    }
+
+    function displayPipelineStatus(statuses) {
+        const container = document.querySelector('#pipelineStatus .card-body');
+
+        if (statuses.length === 0) {
+            container.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> No pipeline components found
+                </div>
+            `;
+            return;
+        }
+
+        let html = '<div class="row">';
+
+        statuses.forEach(status => {
+            const statusClass = status.status === 'running' ? 'success' :
+                              status.status === 'idle' ? 'secondary' : 'danger';
+            const icon = status.status === 'running' ? 'bi-play-circle-fill' :
+                        status.status === 'idle' ? 'bi-pause-circle' : 'bi-exclamation-circle-fill';
+
+            html += `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card border-${statusClass}">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="bi ${icon} text-${statusClass}"></i>
+                                ${status.component}
+                            </h5>
+                            <p class="card-text">
+                                <span class="badge bg-${statusClass}">${status.status}</span>
+                                <br>
+                                <small class="text-muted">${status.message || 'No message'}</small>
+                            </p>
+                            ${status.timestamp ? `<small class="text-muted">Updated: ${formatDateTime(status.timestamp)}</small>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // Load initial status
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshStatus();
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshStatus, 30000);
+    });
+</script>
+{% endblock %}

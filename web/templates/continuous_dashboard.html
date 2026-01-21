@@ -1,0 +1,1220 @@
+{% extends "base.html" %}
+
+{% block title %}Continuous Learning Dashboard - Recording Management System{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-running { background-color: #d4edda; color: #155724; border: 2px solid #28a745; }
+    .status-paused { background-color: #fff3cd; color: #856404; border: 2px solid #ffc107; }
+    .status-stopped { background-color: #e2e3e5; color: #383d41; border: 2px solid #6c757d; }
+    .status-completed { background-color: #d1ecf1; color: #0c5460; border: 2px solid #17a2b8; }
+    .status-failed { background-color: #f8d7da; color: #721c24; border: 2px solid #dc3545; }
+
+    .experiment-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+        height: 100%;
+    }
+
+    .experiment-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    }
+
+    .metric-dashboard {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .metric-box {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+
+    .metric-box-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--secondary-color);
+    }
+
+    .metric-box-label {
+        color: #6c757d;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        margin-top: 0.5rem;
+    }
+
+    .cycle-progress {
+        height: 8px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+
+    .cycle-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--secondary-color), var(--success-color));
+        transition: width 0.3s ease;
+    }
+
+    .alert-badge {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 0.25rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .chart-container {
+        height: 300px;
+        margin-top: 1rem;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #6c757d;
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+
+    .refresh-indicator {
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: white;
+        padding: 0.75rem 1.25rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        display: none;
+        z-index: 1000;
+    }
+
+    .refresh-indicator.show {
+        display: block;
+        animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+        from { transform: translateX(400px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Modal enhancements for scrollable content */
+    .modal-xl {
+        max-width: 95%;
+    }
+
+    .modal-body {
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+    }
+
+    .figure-gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .figure-item {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 0.5rem;
+        background: #f8f9fa;
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+
+    .figure-item:hover {
+        transform: scale(1.02);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    .figure-item img {
+        width: 100%;
+        height: auto;
+        border-radius: 4px;
+        background: white;
+    }
+
+    .figure-caption {
+        font-size: 0.875rem;
+        color: #495057;
+        margin-top: 0.5rem;
+        text-align: center;
+    }
+
+    .figure-modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.9);
+    }
+
+    .figure-modal-content {
+        position: relative;
+        margin: 2% auto;
+        padding: 20px;
+        max-width: 90%;
+        max-height: 90%;
+    }
+
+    .figure-modal-content img {
+        width: 100%;
+        height: auto;
+        max-height: 85vh;
+        object-fit: contain;
+    }
+
+    .figure-modal-close {
+        position: absolute;
+        top: 10px;
+        right: 25px;
+        color: #fff;
+        font-size: 35px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .nav-tabs {
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .tab-content {
+        padding: 1.5rem 0;
+    }
+
+    .results-table {
+        font-size: 0.9rem;
+    }
+
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .metric-card {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .metric-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--secondary-color);
+    }
+
+    .metric-label {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col">
+            <h2>
+                <i class="bi bi-arrow-repeat text-primary"></i>
+                Continuous Learning Dashboard
+            </h2>
+            <p class="text-muted">Monitor autonomous recording and training experiments</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-outline-primary me-2" onclick="refreshDashboard()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+            <a href="/continuous/create" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> New Experiment
+            </a>
+        </div>
+    </div>
+
+    <!-- Refresh Indicator -->
+    <div class="refresh-indicator" id="refreshIndicator">
+        <i class="bi bi-arrow-clockwise text-primary me-2"></i>
+        <span>Updating...</span>
+    </div>
+
+    <!-- Overall Metrics -->
+    <div class="metric-dashboard" id="overallMetrics">
+        <div class="metric-box">
+            <div class="metric-box-value" id="totalExperiments">—</div>
+            <div class="metric-box-label">Total Experiments</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-box-value text-success" id="runningExperiments">—</div>
+            <div class="metric-box-label">Running Now</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-box-value text-primary" id="totalCycles">—</div>
+            <div class="metric-box-label">Total Cycles</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-box-value text-info" id="avgAccuracy">—</div>
+            <div class="metric-box-label">Avg Accuracy</div>
+        </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <ul class="nav nav-tabs mb-3" id="filterTabs">
+        <li class="nav-item">
+            <a class="nav-link active" data-filter="all" href="#" onclick="filterExperiments('all', event)">
+                All Experiments
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-filter="running" href="#" onclick="filterExperiments('running', event)">
+                <i class="bi bi-play-circle-fill text-success"></i> Running
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-filter="paused" href="#" onclick="filterExperiments('paused', event)">
+                <i class="bi bi-pause-circle-fill text-warning"></i> Paused
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-filter="completed" href="#" onclick="filterExperiments('completed', event)">
+                <i class="bi bi-check-circle-fill text-info"></i> Completed
+            </a>
+        </li>
+    </ul>
+
+    <!-- Experiments Grid -->
+    <div id="experimentsContainer">
+        <!-- Loading state -->
+        <div class="text-center p-5" id="loadingState">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-muted mt-2">Loading experiments...</p>
+        </div>
+    </div>
+
+    <!-- Experiment Detail Modal -->
+    <div class="modal fade" id="experimentModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Experiment Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <!-- Populated dynamically -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-danger" id="deleteBtn" style="display:none;">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" id="rerunBtn">
+                        <i class="bi bi-arrow-clockwise"></i> Re-run
+                    </button>
+                    <div class="ms-auto">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-warning" id="pauseBtn" style="display:none;">
+                            <i class="bi bi-pause-circle"></i> Pause
+                        </button>
+                        <button type="button" class="btn btn-danger" id="killBtn" style="display:none;">
+                            <i class="bi bi-x-octagon"></i> Force Kill
+                        </button>
+                        <button type="button" class="btn btn-success" id="startBtn" style="display:none;">
+                            <i class="bi bi-play-circle"></i> Start
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Figure Viewer Modal -->
+    <div class="figure-modal" id="figureModal">
+        <span class="figure-modal-close" onclick="closeFigureModal()">&times;</span>
+        <div class="figure-modal-content">
+            <img id="figureModalImg" src="" alt="Full size figure">
+            <p id="figureModalCaption" style="color: white; text-align: center; margin-top: 1rem;"></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let experiments = [];
+let currentFilter = 'all';
+let autoRefreshInterval = null;
+
+// Load experiments from API
+async function loadExperiments(filter = null) {
+    try {
+        const url = filter && filter !== 'all'
+            ? `/api/continuous/experiments?status=${filter}`
+            : '/api/continuous/experiments';
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.success) {
+            experiments = data.experiments;
+            renderExperiments();
+            updateOverallMetrics();
+        } else {
+            showError('experimentsContainer', `Failed to load experiments: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error loading experiments:', error);
+        showError('experimentsContainer', 'Failed to load experiments. Please try again.');
+    }
+}
+
+// Render experiments grid
+function renderExperiments() {
+    const container = document.getElementById('experimentsContainer');
+
+    if (experiments.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="bi bi-inbox"></i></div>
+                <h4>No Experiments Yet</h4>
+                <p class="text-muted">Create your first continuous learning experiment to get started.</p>
+                <a href="/continuous/create" class="btn btn-primary mt-3">
+                    <i class="bi bi-plus-circle"></i> Create Experiment
+                </a>
+            </div>
+        `;
+        return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'row g-3';
+
+    experiments.forEach(exp => {
+        const card = createExperimentCard(exp);
+        grid.appendChild(card);
+    });
+
+    container.innerHTML = '';
+    container.appendChild(grid);
+}
+
+// Format estimated end time
+function formatEstimatedEndTime(exp) {
+    // Only show for running experiments
+    if (exp.status !== 'running') {
+        return '—';
+    }
+
+    // If end_time is directly available, use it
+    if (exp.end_time) {
+        try {
+            const endTime = new Date(exp.end_time);
+            const now = new Date();
+            const hoursUntilEnd = (endTime - now) / (1000 * 60 * 60);
+
+            if (hoursUntilEnd < 0) {
+                return 'Overdue';
+            } else if (hoursUntilEnd < 1) {
+                return `${Math.round(hoursUntilEnd * 60)} min`;
+            } else if (hoursUntilEnd < 24) {
+                return `${Math.round(hoursUntilEnd)} hours`;
+            } else {
+                return formatDateTime(exp.end_time);
+            }
+        } catch (e) {
+            console.error('Error formatting end_time:', e);
+        }
+    }
+
+    // Fallback: Calculate estimated end time based on start time, current cycle, and total cycles
+    if (!exp.start_time || !exp.total_cycles_expected || exp.total_cycles_expected === 0) {
+        return '—';
+    }
+
+    try {
+        const startTime = new Date(exp.start_time);
+        const currentCycle = exp.current_cycle || 0;
+        const totalCycles = exp.total_cycles_expected;
+        const intervalMinutes = exp.recording_interval_minutes || 60;
+
+        // Calculate total duration in minutes
+        const totalMinutes = totalCycles * intervalMinutes;
+
+        // Add to start time
+        const endTime = new Date(startTime.getTime() + totalMinutes * 60 * 1000);
+
+        // Format as relative time if within 24 hours, otherwise full date
+        const now = new Date();
+        const hoursUntilEnd = (endTime - now) / (1000 * 60 * 60);
+
+        if (hoursUntilEnd < 0) {
+            return 'Overdue';
+        } else if (hoursUntilEnd < 1) {
+            const minutesUntilEnd = Math.round((endTime - now) / (1000 * 60));
+            return `${minutesUntilEnd}m`;
+        } else if (hoursUntilEnd < 24) {
+            return `${Math.round(hoursUntilEnd)}h`;
+        } else {
+            // Format as date/time
+            const options = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            return endTime.toLocaleDateString('en-US', options);
+        }
+    } catch (e) {
+        console.error('Error calculating end time:', e);
+        return '—';
+    }
+}
+
+// Create experiment card
+function createExperimentCard(exp) {
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4';
+
+    const statusClass = `status-${exp.status}`;
+    const progress = exp.total_cycles_expected > 0
+        ? (exp.current_cycle / exp.total_cycles_expected) * 100
+        : 0;
+
+    const qcPassRate = exp.qc_pass_count && exp.current_cycle
+        ? ((exp.qc_pass_count / exp.current_cycle) * 100).toFixed(0)
+        : '—';
+
+    col.innerHTML = `
+        <div class="card experiment-card ${statusClass}" onclick="showExperimentDetails('${exp.experiment_id}')">
+            <div class="card-body position-relative">
+                ${exp.status === 'running' ? '<span class="alert-badge bg-success text-white">● LIVE</span>' : ''}
+
+                <h5 class="card-title mb-3">
+                    <i class="bi bi-folder"></i> ${exp.experiment_name}
+                </h5>
+
+                <div class="mb-3">
+                    <span class="badge bg-primary">ID: ${exp.experiment_id}</span>
+                    <span class="badge bg-secondary">${exp.status.toUpperCase()}</span>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <small class="text-muted d-block">Progress</small>
+                        <strong>${exp.current_cycle} / ${exp.total_cycles_expected}</strong>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted d-block">QC Pass Rate</small>
+                        <strong>${qcPassRate}%</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Accuracy</small>
+                        <strong>${exp.current_accuracy ? (exp.current_accuracy * 100).toFixed(1) + '%' : '—'}</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Duration</small>
+                        <strong>${exp.target_duration_weeks}w</strong>
+                    </div>
+                    <div class="col-4">
+                        <small class="text-muted d-block">Est. End</small>
+                        <strong>${formatEstimatedEndTime(exp)}</strong>
+                    </div>
+                </div>
+
+                <div class="cycle-progress">
+                    <div class="cycle-progress-bar" style="width: ${progress}%"></div>
+                </div>
+                <small class="text-muted">${progress.toFixed(1)}% complete</small>
+            </div>
+            <div class="card-footer bg-white text-muted d-flex justify-content-between align-items-center">
+                <small>
+                    <i class="bi bi-clock"></i>
+                    Created: ${formatDate(exp.created_at)}
+                </small>
+                <button class="btn btn-sm btn-outline-primary"
+                        onclick="event.stopPropagation(); rerunExperiment('${exp.experiment_id}', '${exp.experiment_name.replace(/'/g, "\\'")}');"
+                        title="Re-run this experiment">
+                    <i class="bi bi-arrow-clockwise"></i> Re-run
+                </button>
+            </div>
+        </div>
+    `;
+
+    return col;
+}
+
+// Show experiment details in modal with tabs
+async function showExperimentDetails(experimentId) {
+    try {
+        // Fetch experiment data and stats in parallel
+        const [expResponse, statsResponse] = await Promise.all([
+            fetch(`/api/continuous/experiments/${experimentId}`),
+            fetch(`/api/continuous/experiments/${experimentId}/stats`)
+        ]);
+
+        const expData = await expResponse.json();
+        const statsData = await statsResponse.json();
+
+        if (!expData.success) {
+            alert('Failed to load experiment details');
+            return;
+        }
+
+        const exp = expData.experiment;
+        const cycles = expData.recent_cycles || [];
+        const alerts = expData.unacknowledged_alerts || [];
+        const stats = statsData.success ? statsData : null;
+
+        // Set modal title
+        document.getElementById('modalTitle').innerHTML = `
+            <i class="bi bi-folder"></i> ${exp.experiment_name}
+            <span class="badge bg-${getStatusColor(exp.status)} ms-2">${exp.status.toUpperCase()}</span>
+        `;
+
+        // Build tabbed modal body
+        const modalBody = document.getElementById('modalBody');
+        modalBody.innerHTML = `
+            <!-- Navigation Tabs -->
+            <ul class="nav nav-tabs" id="experimentTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview-content" type="button">
+                        <i class="bi bi-info-circle"></i> Overview
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="metrics-tab" data-bs-toggle="tab" data-bs-target="#metrics-content" type="button">
+                        <i class="bi bi-graph-up"></i> Statistics
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="cycles-tab" data-bs-toggle="tab" data-bs-target="#cycles-content" type="button">
+                        <i class="bi bi-clock-history"></i> Cycles
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="visualizations-tab" data-bs-toggle="tab" data-bs-target="#visualizations-content" type="button" onclick="loadVisualizations('${experimentId}')">
+                        <i class="bi bi-image"></i> Visualizations
+                    </button>
+                </li>
+                ${alerts.length > 0 ? `
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="alerts-tab" data-bs-toggle="tab" data-bs-target="#alerts-content" type="button">
+                        <i class="bi bi-exclamation-triangle text-warning"></i> Alerts <span class="badge bg-warning">${alerts.length}</span>
+                    </button>
+                </li>
+                ` : ''}
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="experimentTabContent">
+                <!-- Overview Tab -->
+                <div class="tab-pane fade show active" id="overview-content" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="mb-3"><i class="bi bi-gear"></i> Configuration</h6>
+                            <table class="table table-sm">
+                                <tr><th>Experiment ID:</th><td><code>${exp.experiment_id}</code></td></tr>
+                                <tr><th>Duration:</th><td>${exp.target_duration_weeks} weeks</td></tr>
+                                <tr><th>Interval:</th><td>${exp.recording_interval_minutes} minutes</td></tr>
+                                <tr><th>Recording Length:</th><td>${exp.recording_duration_seconds ? (exp.recording_duration_seconds / 60).toFixed(0) + ' min' : '—'}</td></tr>
+                                <tr><th>Playback File:</th><td>${exp.playback_file}</td></tr>
+                                <tr><th>Channel 1 (Left):</th><td><span class="badge bg-primary">${exp.channel_1_substance}</span></td></tr>
+                                <tr><th>Channel 2 (Right):</th><td><span class="badge bg-success">${exp.channel_2_substance}</span></td></tr>
+                                <tr><th>Faraday Cage:</th><td>${exp.faraday_cage_used ? '✓ Yes' : '✗ No'}</td></tr>
+                                <tr><th>Researcher:</th><td>${exp.researcher_name || 'Autonomous'}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="mb-3"><i class="bi bi-activity"></i> Current Status</h6>
+                            <table class="table table-sm">
+                                <tr><th>Status:</th><td><span class="badge bg-${getStatusColor(exp.status)}">${exp.status.toUpperCase()}</span></td></tr>
+                                <tr><th>Progress:</th><td>${exp.current_cycle} / ${exp.total_cycles_expected} cycles (${((exp.current_cycle / exp.total_cycles_expected) * 100).toFixed(1)}%)</td></tr>
+                                <tr><th>QC Passes:</th><td>${exp.qc_pass_count || 0} (${exp.current_cycle > 0 ? ((exp.qc_pass_count / exp.current_cycle) * 100).toFixed(0) : 0}%)</td></tr>
+                                <tr><th>Current Accuracy:</th><td>${exp.current_accuracy ? '<strong>' + (exp.current_accuracy * 100).toFixed(1) + '%</strong>' : '—'}</td></tr>
+                                <tr><th>Started:</th><td>${formatDateTime(exp.start_time)}</td></tr>
+                                <tr><th>Next Cycle:</th><td>${exp.next_cycle_scheduled ? formatDateTime(exp.next_cycle_scheduled) : '—'}</td></tr>
+                                <tr><th>Process PID:</th><td>${exp.orchestrator_pid ? '<code>' + exp.orchestrator_pid + '</code>' : '—'}</td></tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="text-muted">Experiment Progress</small>
+                            <small class="text-muted">${exp.current_cycle} / ${exp.total_cycles_expected}</small>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-primary" role="progressbar"
+                                 style="width: ${(exp.current_cycle / exp.total_cycles_expected) * 100}%"
+                                 aria-valuenow="${exp.current_cycle}"
+                                 aria-valuemin="0"
+                                 aria-valuemax="${exp.total_cycles_expected}">
+                                ${((exp.current_cycle / exp.total_cycles_expected) * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Metrics Tab -->
+                <div class="tab-pane fade" id="metrics-content" role="tabpanel">
+                    ${stats ? renderStatsTab(stats) : '<p class="text-muted">Loading statistics...</p>'}
+                </div>
+
+                <!-- Cycles Tab -->
+                <div class="tab-pane fade" id="cycles-content" role="tabpanel">
+                    ${renderCyclesTab(cycles)}
+                </div>
+
+                <!-- Visualizations Tab -->
+                <div class="tab-pane fade" id="visualizations-content" role="tabpanel">
+                    <div id="visualizationsContainer">
+                        <p class="text-muted text-center p-4">
+                            <i class="bi bi-hourglass-split"></i> Click to load visualizations...
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Alerts Tab -->
+                ${alerts.length > 0 ? `
+                <div class="tab-pane fade" id="alerts-content" role="tabpanel">
+                    ${renderAlertsTab(alerts)}
+                </div>
+                ` : ''}
+            </div>
+        `;
+
+        // Show/hide action buttons
+        const pauseBtn = document.getElementById('pauseBtn');
+        const startBtn = document.getElementById('startBtn');
+        const killBtn = document.getElementById('killBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const rerunBtn = document.getElementById('rerunBtn');
+
+        // Re-run button is always visible
+        rerunBtn.onclick = () => rerunExperiment(experimentId, exp.experiment_name);
+
+        if (exp.status === 'running') {
+            pauseBtn.style.display = 'inline-block';
+            killBtn.style.display = 'inline-block';
+            startBtn.style.display = 'none';
+            deleteBtn.style.display = 'none';  // Can't delete while running
+            pauseBtn.onclick = () => pauseExperiment(experimentId);
+            killBtn.onclick = () => killExperiment(experimentId);
+        } else if (exp.status === 'paused' || exp.status === 'stopped') {
+            pauseBtn.style.display = 'none';
+            killBtn.style.display = 'none';
+            startBtn.style.display = 'inline-block';
+            deleteBtn.style.display = 'inline-block';  // Can delete stopped experiments
+            startBtn.onclick = () => startExperiment(experimentId);
+            deleteBtn.onclick = () => deleteExperiment(experimentId);
+        } else {
+            pauseBtn.style.display = 'none';
+            killBtn.style.display = 'none';
+            startBtn.style.display = 'none';
+            deleteBtn.style.display = 'inline-block';  // Can delete other statuses
+            deleteBtn.onclick = () => deleteExperiment(experimentId);
+        }
+
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('experimentModal'));
+        modal.show();
+
+    } catch (error) {
+        console.error('Error loading experiment details:', error);
+        alert('Failed to load experiment details');
+    }
+}
+
+// Pause experiment
+async function pauseExperiment(experimentId) {
+    if (!confirm('Are you sure you want to pause this experiment? It will stop gracefully after the current cycle.')) return;
+
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}/pause`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const msg = data.process_still_running ?
+                `Pause requested. Process (PID ${data.pid}) will stop after current cycle.` :
+                'Experiment paused (process already stopped).';
+            alert(msg);
+            bootstrap.Modal.getInstance(document.getElementById('experimentModal')).hide();
+            refreshDashboard();
+        } else {
+            alert(`Failed to pause experiment: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error pausing experiment:', error);
+        alert('An error occurred while pausing the experiment');
+    }
+}
+
+// Kill experiment (force stop)
+async function killExperiment(experimentId) {
+    if (!confirm('⚠️ WARNING: Force kill will immediately terminate the experiment!\n\nThis may interrupt a running cycle. Use this only if pause doesn\'t work.\n\nContinue?')) return;
+
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}/kill`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const msg = data.killed ?
+                `Experiment killed (PID ${data.pid} terminated).` :
+                `Experiment stopped. ${data.warning || 'Process already dead.'}`;
+            alert(msg);
+            bootstrap.Modal.getInstance(document.getElementById('experimentModal')).hide();
+            refreshDashboard();
+        } else {
+            alert(`Failed to kill experiment: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error killing experiment:', error);
+        alert('An error occurred while killing the experiment');
+    }
+}
+
+// Delete experiment (permanently removes from database)
+async function deleteExperiment(experimentId) {
+    // Get experiment name for confirmation
+    const exp = experiments.find(e => e.experiment_id === experimentId);
+    const expName = exp ? exp.experiment_name : experimentId;
+
+    const confirmed = confirm(
+        `⚠️ PERMANENT DELETE WARNING ⚠️\n\n` +
+        `Are you sure you want to DELETE experiment "${expName}"?\n\n` +
+        `This will permanently remove:\n` +
+        `  • The experiment record\n` +
+        `  • All recording cycles\n` +
+        `  • All alerts\n` +
+        `  • All recording sessions\n` +
+        `  • All extracted features from database\n` +
+        `  • Model files from disk\n\n` +
+        `This action CANNOT be undone!`
+    );
+
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const deleted = data.deleted;
+            let message = `✓ Experiment deleted successfully!\n\n` +
+                `Removed:\n` +
+                `  • Experiment: ${deleted.experiment}\n` +
+                `  • Cycles: ${deleted.cycles}\n` +
+                `  • Alerts: ${deleted.alerts}\n` +
+                `  • Recording sessions: ${deleted.recording_sessions}\n` +
+                `  • Features: ${deleted.features}\n`;
+
+            if (deleted.model_files > 0) {
+                message += `  • Model files: Yes\n`;
+            }
+
+            alert(message);
+            bootstrap.Modal.getInstance(document.getElementById('experimentModal')).hide();
+            refreshDashboard();
+        } else {
+            alert(`Failed to delete experiment: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error deleting experiment:', error);
+        alert('An error occurred while deleting the experiment');
+    }
+}
+
+// Start experiment
+async function startExperiment(experimentId) {
+    if (!confirm('Start this experiment now?')) return;
+
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}/start`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Experiment started successfully!');
+            bootstrap.Modal.getInstance(document.getElementById('experimentModal')).hide();
+            refreshDashboard();
+        } else {
+            alert(`Failed to start experiment: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error starting experiment:', error);
+        alert('An error occurred while starting the experiment');
+    }
+}
+
+// Re-run (duplicate) experiment
+async function rerunExperiment(experimentId, experimentName) {
+    const message = `Re-run "${experimentName}" with the same configuration?\n\n` +
+                    `A new experiment will be created with an updated name (e.g., "${experimentName} (2)").\n\n` +
+                    `Would you like to start it immediately?`;
+
+    // Ask if user wants to start immediately
+    const shouldStart = confirm(message);
+    if (shouldStart === null) return; // User cancelled first dialog
+
+    // If user clicked Cancel on first dialog, ask if they want to create without starting
+    const createOnly = !shouldStart && confirm('Create the experiment without starting it?');
+    if (!shouldStart && !createOnly) return; // User doesn't want to do anything
+
+    const autoStart = shouldStart;
+
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}/duplicate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auto_start: autoStart })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const statusMsg = data.started
+                ? `Experiment "${data.experiment_name}" created and started!`
+                : `Experiment "${data.experiment_name}" created successfully!`;
+
+            alert(statusMsg + `\n\nNew ID: ${data.experiment_id}`);
+
+            // Close current modal and refresh
+            bootstrap.Modal.getInstance(document.getElementById('experimentModal')).hide();
+            refreshDashboard();
+        } else {
+            alert(`Failed to duplicate experiment: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error duplicating experiment:', error);
+        alert('An error occurred while duplicating the experiment');
+    }
+}
+
+// Filter experiments
+function filterExperiments(filter, event) {
+    if (event) {
+        event.preventDefault();
+        document.querySelectorAll('#filterTabs .nav-link').forEach(link => link.classList.remove('active'));
+        event.target.classList.add('active');
+    }
+
+    currentFilter = filter;
+    loadExperiments(filter);
+}
+
+// Update overall metrics
+function updateOverallMetrics() {
+    const total = experiments.length;
+    const running = experiments.filter(e => e.status === 'running').length;
+    const totalCycles = experiments.reduce((sum, e) => sum + (e.current_cycle || 0), 0);
+    const avgAcc = experiments
+        .filter(e => e.current_accuracy)
+        .reduce((sum, e, i, arr) => sum + e.current_accuracy / arr.length, 0);
+
+    document.getElementById('totalExperiments').textContent = total;
+    document.getElementById('runningExperiments').textContent = running;
+    document.getElementById('totalCycles').textContent = totalCycles;
+    document.getElementById('avgAccuracy').textContent = avgAcc ? (avgAcc * 100).toFixed(1) + '%' : '—';
+}
+
+// Refresh dashboard
+function refreshDashboard() {
+    const indicator = document.getElementById('refreshIndicator');
+    indicator.classList.add('show');
+
+    loadExperiments(currentFilter).then(() => {
+        setTimeout(() => {
+            indicator.classList.remove('show');
+        }, 1000);
+    });
+}
+
+// Render statistics tab content
+function renderStatsTab(stats) {
+    const qc = stats.qc || {};
+    const training = stats.training || {};
+    const alerts = stats.alerts || {};
+    const accuracyHistory = stats.accuracy_history || [];
+
+    return `
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value text-success">${qc.qc_passes || 0}</div>
+                <div class="metric-label">QC Passes</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value text-danger">${qc.qc_failures || 0}</div>
+                <div class="metric-label">QC Failures</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value text-primary">${training.completed_cycles || 0}</div>
+                <div class="metric-label">Completed Cycles</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value text-info">${training.avg_accuracy ? (training.avg_accuracy * 100).toFixed(1) + '%' : '—'}</div>
+                <div class="metric-label">Avg Accuracy</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value text-warning">${training.max_accuracy ? (training.max_accuracy * 100).toFixed(1) + '%' : '—'}</div>
+                <div class="metric-label">Max Accuracy</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">${qc.avg_separation_score ? qc.avg_separation_score.toFixed(3) : '—'}</div>
+                <div class="metric-label">Avg Separation</div>
+            </div>
+        </div>
+
+        ${accuracyHistory.length > 0 ? `
+        <div class="mt-4">
+            <h6><i class="bi bi-graph-up"></i> Accuracy Trend</h6>
+            <div class="table-responsive">
+                <table class="table table-sm results-table">
+                    <thead>
+                        <tr>
+                            <th>Cycle</th>
+                            <th>Accuracy</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${accuracyHistory.map(item => `
+                            <tr>
+                                <td>#${item.cycle_number}</td>
+                                <td><strong>${(item.model_accuracy * 100).toFixed(1)}%</strong></td>
+                                <td>${formatDateTime(item.end_time)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        ` : '<p class="text-muted text-center">No accuracy data yet</p>'}
+    `;
+}
+
+// Render cycles tab content
+function renderCyclesTab(cycles) {
+    if (cycles.length === 0) {
+        return '<p class="text-muted text-center p-4">No cycles completed yet</p>';
+    }
+
+    return `
+        <div class="table-responsive">
+            <table class="table table-hover results-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Cycle #</th>
+                        <th>Status</th>
+                        <th>QC Pass</th>
+                        <th>Separation Score</th>
+                        <th>Model Accuracy</th>
+                        <th>Training Time</th>
+                        <th>Completed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${cycles.map(cycle => `
+                        <tr>
+                            <td><strong>#${cycle.cycle_number}</strong></td>
+                            <td><span class="badge bg-${getCycleStatusColor(cycle.status)}">${cycle.status}</span></td>
+                            <td>${cycle.qc_passed === true ? '<i class="bi bi-check-circle-fill text-success"></i>' : cycle.qc_passed === false ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '—'}</td>
+                            <td>${cycle.qc_separation_score ? cycle.qc_separation_score.toFixed(3) : '—'}</td>
+                            <td>${cycle.model_accuracy ? '<strong>' + (cycle.model_accuracy * 100).toFixed(1) + '%</strong>' : '—'}</td>
+                            <td>${cycle.training_time_seconds ? (cycle.training_time_seconds / 60).toFixed(1) + ' min' : '—'}</td>
+                            <td>${cycle.end_time ? formatDateTime(cycle.end_time) : '—'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+// Render alerts tab content
+function renderAlertsTab(alerts) {
+    return `
+        <div class="list-group">
+            ${alerts.map(alert => `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="badge bg-${alert.severity === 'critical' ? 'danger' : alert.severity === 'error' ? 'warning' : 'info'} me-2">
+                                    ${alert.severity.toUpperCase()}
+                                </span>
+                                <strong>${alert.alert_type}</strong>
+                            </div>
+                            <p class="mb-1">${alert.message}</p>
+                            <small class="text-muted">
+                                <i class="bi bi-clock"></i> ${formatDateTime(alert.created_at)}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+// Load visualizations for experiment
+let visualizationsLoaded = false;
+async function loadVisualizations(experimentId) {
+    if (visualizationsLoaded) return; // Only load once
+
+    const container = document.getElementById('visualizationsContainer');
+    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"></div><p class="text-muted mt-2">Loading visualizations...</p></div>';
+
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}/visualizations`);
+        const data = await response.json();
+
+        if (data.success && data.figures && data.figures.length > 0) {
+            const figures = data.figures;
+            container.innerHTML = `
+                <h6 class="mb-3"><i class="bi bi-images"></i> Available Visualizations (${figures.length})</h6>
+                <div class="figure-gallery">
+                    ${figures.map((fig, idx) => `
+                        <div class="figure-item" onclick="showFullFigure('${fig.path}', '${fig.caption}')">
+                            <img src="${fig.thumbnail || fig.path}" alt="${fig.caption}" loading="lazy">
+                            <div class="figure-caption">${fig.caption}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            visualizationsLoaded = true;
+        } else {
+            container.innerHTML = `
+                <div class="text-center p-5">
+                    <i class="bi bi-image" style="font-size: 3rem; opacity: 0.3;"></i>
+                    <p class="text-muted mt-3">No visualizations available yet.</p>
+                    <small class="text-muted">Visualizations are generated after training cycles complete.</small>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading visualizations:', error);
+        container.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                Failed to load visualizations. They may not have been generated yet.
+            </div>
+        `;
+    }
+}
+
+// Show full figure in modal
+function showFullFigure(path, caption) {
+    const modal = document.getElementById('figureModal');
+    const img = document.getElementById('figureModalImg');
+    const captionEl = document.getElementById('figureModalCaption');
+
+    img.src = path;
+    captionEl.textContent = caption;
+    modal.style.display = 'block';
+}
+
+// Close figure modal
+function closeFigureModal() {
+    document.getElementById('figureModal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('figureModal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+    }
+};
+
+// Helper functions
+function getStatusColor(status) {
+    const colors = {
+        running: 'success',
+        paused: 'warning',
+        stopped: 'secondary',
+        completed: 'info',
+        failed: 'danger'
+    };
+    return colors[status] || 'secondary';
+}
+
+function getCycleStatusColor(status) {
+    const colors = {
+        completed: 'success',
+        running: 'primary',
+        recording: 'info',
+        training: 'warning',
+        failed: 'danger',
+        qc_failed: 'warning'
+    };
+    return colors[status] || 'secondary';
+}
+
+// Format date helper functions
+function formatDate(dateString) {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+// Show error message
+function showError(containerId, message) {
+    document.getElementById(containerId).innerHTML = `
+        <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle"></i> ${message}
+        </div>
+    `;
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    loadExperiments();
+
+    // Auto-refresh every 30 seconds if there are running experiments
+    autoRefreshInterval = setInterval(() => {
+        const runningCount = experiments.filter(e => e.status === 'running').length;
+        if (runningCount > 0) {
+            refreshDashboard();
+        }
+    }, 30000);
+});
+
+// Cleanup
+window.addEventListener('beforeunload', () => {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+});
+</script>
+{% endblock %}

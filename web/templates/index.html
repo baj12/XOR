@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Recording Management System{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="bi bi-speedometer2"></i> Dashboard</h2>
+            <p class="text-muted">Recording management and pipeline monitoring</p>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="metric-value" id="stat-total-recordings">-</div>
+                <div class="metric-label">Total Recordings</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="metric-value text-warning" id="stat-pending-metadata">-</div>
+                <div class="metric-label">Pending Metadata</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="metric-value text-info" id="stat-pending-qc">-</div>
+                <div class="metric-label">Pending QC</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="metric-value text-success" id="stat-approved">-</div>
+                <div class="metric-label">QC Approved</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Pipeline Status -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-diagram-3"></i> Pipeline Status
+                    <button class="btn btn-sm btn-outline-secondary float-end" onclick="refreshPipelineStatus()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body" id="pipeline-status-container">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Recent Recordings -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <i class="bi bi-clock-history"></i> Recent Recordings
+                    <a href="/recordings" class="btn btn-sm btn-outline-primary float-end">View All</a>
+                </div>
+                <div class="card-body" id="recent-recordings-container">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Weather & Quick Actions -->
+        <div class="col-lg-4">
+            <!-- Weather Widget -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-cloud-sun"></i> Current Weather
+                    <small class="text-muted float-end">Viroflay, France</small>
+                </div>
+                <div class="card-body" id="weather-container">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <i class="bi bi-lightning"></i> Quick Actions
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="/annotate" class="btn btn-primary">
+                            <i class="bi bi-pencil-square"></i> Annotate Recording
+                        </a>
+                        <a href="/qc" class="btn btn-outline-primary">
+                            <i class="bi bi-clipboard-check"></i> Run Quality Control
+                        </a>
+                        <button class="btn btn-outline-secondary" onclick="fetchFromRubix44()">
+                            <i class="bi bi-cloud-download"></i> Fetch from Rubix44
+                        </button>
+                        <a href="/pipeline" class="btn btn-outline-info">
+                            <i class="bi bi-graph-up"></i> View Training Monitor
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Info -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <i class="bi bi-info-circle"></i> System Information
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6">Rubix44 API:</dt>
+                        <dd class="col-sm-6"><small id="rubix-url">-</small></dd>
+
+                        <dt class="col-sm-6">Database:</dt>
+                        <dd class="col-sm-6"><small>MariaDB</small></dd>
+
+                        <dt class="col-sm-6">Last Update:</dt>
+                        <dd class="col-sm-6"><small id="last-update">-</small></dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Load dashboard data
+async function loadDashboard() {
+    await Promise.all([
+        loadStats(),
+        loadPipelineStatus(),
+        loadRecentRecordings(),
+        loadWeather()
+    ]);
+
+    // Update last update time
+    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+}
+
+async function loadStats() {
+    try {
+        // Load total recordings
+        const response = await fetch('/api/recordings?limit=1000');
+        const data = await response.json();
+
+        if (data.success) {
+            const recordings = data.recordings;
+            document.getElementById('stat-total-recordings').textContent = data.total;
+
+            const pendingMetadata = recordings.filter(r => !r.metadata_complete).length;
+            const pendingQC = recordings.filter(r => r.metadata_complete && r.quality_approved === null).length;
+            const approved = recordings.filter(r => r.quality_approved === true).length;
+
+            document.getElementById('stat-pending-metadata').textContent = pendingMetadata;
+            document.getElementById('stat-pending-qc').textContent = pendingQC;
+            document.getElementById('stat-approved').textContent = approved;
+        }
+    } catch (error) {
+        console.error('Failed to load stats:', error);
+    }
+}
+
+async function loadPipelineStatus() {
+    const container = document.getElementById('pipeline-status-container');
+    showLoading('pipeline-status-container');
+
+    try {
+        const response = await fetch('/api/pipeline/status');
+        const data = await response.json();
+
+        if (data.success) {
+            let html = '<div class="list-group list-group-flush">';
+
+            data.statuses.forEach(status => {
+                const statusClass = `status-${status.status}`;
+                const icon = status.status === 'running' ? 'bi-play-circle-fill' :
+                           status.status === 'error' ? 'bi-exclamation-circle-fill' :
+                           status.status === 'completed' ? 'bi-check-circle-fill' :
+                           'bi-pause-circle-fill';
+
+                html += `
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="bi ${icon} me-2"></i>
+                            <strong>${status.component.replace(/_/g, ' ').toUpperCase()}</strong>
+                            <br>
+                            <small class="text-muted">${status.message || 'No message'}</small>
+                        </div>
+                        <span class="status-badge ${statusClass}">${status.status.toUpperCase()}</span>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        } else {
+            showError('pipeline-status-container', 'Failed to load pipeline status');
+        }
+    } catch (error) {
+        console.error('Failed to load pipeline status:', error);
+        showError('pipeline-status-container', 'Error loading pipeline status');
+    }
+}
+
+async function loadRecentRecordings() {
+    const container = document.getElementById('recent-recordings-container');
+    showLoading('recent-recordings-container');
+
+    try {
+        const response = await fetch('/api/recordings?limit=5');
+        const data = await response.json();
+
+        if (data.success && data.recordings.length > 0) {
+            let html = '<div class="table-responsive"><table class="table table-hover mb-0"><thead><tr>';
+            html += '<th>Session ID</th><th>Date</th><th>Status</th><th>Actions</th>';
+            html += '</tr></thead><tbody>';
+
+            data.recordings.forEach(rec => {
+                const status = rec.quality_approved === true ? '<span class="badge bg-success">Approved</span>' :
+                             rec.quality_approved === false ? '<span class="badge bg-danger">Rejected</span>' :
+                             rec.metadata_complete ? '<span class="badge bg-info">Pending QC</span>' :
+                             '<span class="badge bg-warning">Pending Metadata</span>';
+
+                html += `
+                    <tr>
+                        <td><small>${rec.session_id}</small></td>
+                        <td><small>${formatDateTime(rec.recording_date)}</small></td>
+                        <td>${status}</td>
+                        <td>
+                            <a href="/recordings/${rec.session_id}" class="btn btn-sm btn-outline-primary">View</a>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<p class="text-muted text-center p-3">No recordings found</p>';
+        }
+    } catch (error) {
+        console.error('Failed to load recent recordings:', error);
+        showError('recent-recordings-container', 'Error loading recordings');
+    }
+}
+
+async function loadWeather() {
+    const container = document.getElementById('weather-container');
+
+    try {
+        const response = await fetch('/api/weather');
+        const data = await response.json();
+
+        if (data.success && data.weather) {
+            const w = data.weather;
+            const html = `
+                <div class="weather-widget">
+                    <h3 class="mb-1">${w.weather_temperature_c ? w.weather_temperature_c.toFixed(1) : '-'}°C</h3>
+                    <p class="mb-2">${w.weather_conditions || 'Unknown'}</p>
+                    <div class="row small">
+                        <div class="col-6">
+                            <i class="bi bi-droplet"></i> ${w.weather_humidity_percent ? w.weather_humidity_percent.toFixed(0) : '-'}%
+                        </div>
+                        <div class="col-6">
+                            <i class="bi bi-speedometer"></i> ${w.weather_pressure_hpa ? w.weather_pressure_hpa.toFixed(0) : '-'} hPa
+                        </div>
+                    </div>
+                    <div class="row small mt-2">
+                        <div class="col-12">
+                            <i class="bi bi-wind"></i> ${w.weather_wind_speed_kmh ? w.weather_wind_speed_kmh.toFixed(1) : '-'} km/h ${w.weather_wind_direction || ''}
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <small>Updated: ${w.weather_timestamp ? formatDateTime(w.weather_timestamp) : 'Unknown'}</small>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<p class="text-muted">Weather data unavailable</p>';
+        }
+    } catch (error) {
+        console.error('Failed to load weather:', error);
+        container.innerHTML = '<p class="text-muted">Error loading weather</p>';
+    }
+
+    // Store rubix URL
+    try {
+        const response = await fetch('/api/rubix44/recordings');
+        const data = await response.json();
+        if (data.api_url) {
+            document.getElementById('rubix-url').innerHTML = `<a href="${data.api_url}" target="_blank">${data.api_url}</a>`;
+        }
+    } catch (error) {
+        console.error('Failed to get rubix URL:', error);
+    }
+}
+
+async function refreshPipelineStatus() {
+    await loadPipelineStatus();
+    showAlert('Pipeline status refreshed', 'success');
+}
+
+async function fetchFromRubix44() {
+    try {
+        showAlert('Fetching recordings from Rubix44...', 'info');
+        const response = await fetch('/api/rubix44/recordings');
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert(`Found ${data.recordings.length} recordings on Rubix44`, 'success');
+            // Reload dashboard to show new data
+            setTimeout(loadDashboard, 1000);
+        } else {
+            showAlert('Failed to fetch from Rubix44: ' + data.error, 'danger');
+        }
+    } catch (error) {
+        showAlert('Error connecting to Rubix44', 'danger');
+    }
+}
+
+// Auto-refresh every 30 seconds
+setInterval(loadDashboard, 30000);
+
+// Initial load
+document.addEventListener('DOMContentLoaded', loadDashboard);
+</script>
+{% endblock %}

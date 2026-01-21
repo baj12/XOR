@@ -1,0 +1,573 @@
+{% extends "base.html" %}
+
+{% block title %}Create Continuous Experiment - Recording Management System{% endblock %}
+
+{% block extra_css %}
+<style>
+    .section-header {
+        background-color: #f8f9fa;
+        padding: 0.75rem 1rem;
+        border-left: 4px solid var(--secondary-color);
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .form-section {
+        margin-bottom: 2rem;
+    }
+
+    .help-text {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+
+    .advanced-settings {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+    }
+
+    .preview-card {
+        background-color: #e7f3ff;
+        border: 2px solid var(--secondary-color);
+        border-radius: 8px;
+        padding: 1.5rem;
+    }
+
+    .preview-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .preview-item:last-child {
+        border-bottom: none;
+    }
+
+    .preview-label {
+        font-weight: 600;
+        color: #495057;
+    }
+
+    .preview-value {
+        color: var(--secondary-color);
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col">
+            <h2>
+                <i class="bi bi-plus-circle-fill text-primary"></i>
+                Create Continuous Experiment
+            </h2>
+            <p class="text-muted">Configure an autonomous recording and training experiment</p>
+        </div>
+        <div class="col-auto">
+            <a href="/continuous" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Alert Container -->
+    <div id="alertContainer"></div>
+
+    <!-- Main Form -->
+    <form id="experimentForm">
+        <div class="row">
+            <!-- Left Column: Configuration -->
+            <div class="col-lg-8">
+                <!-- Basic Settings -->
+                <div class="card form-section">
+                    <div class="card-body">
+                        <div class="section-header">
+                            <i class="bi bi-gear"></i> Basic Configuration
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="experimentName" class="form-label">Experiment Name *</label>
+                                <input type="text" class="form-control" id="experimentName" required
+                                       placeholder="e.g., Lavender vs Empty - 2 Week Run">
+                                <div class="help-text">Descriptive name for this experiment</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="targetDuration" class="form-label">Duration (weeks) *</label>
+                                <input type="number" class="form-control" id="targetDuration"
+                                       min="0.01" step="0.01" value="2" required>
+                                <div class="help-text">How long to run (e.g., 0.01 = ~10 minutes for testing)</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="recordingInterval" class="form-label">Recording Interval (minutes) *</label>
+                                <input type="number" class="form-control" id="recordingInterval"
+                                       min="5" value="60" required>
+                                <div class="help-text">Time between recordings (default: 60 min)</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="recordingDuration" class="form-label">Recording Length (seconds)</label>
+                                <input type="number" class="form-control" id="recordingDuration"
+                                       min="60" max="7200" value="3600">
+                                <div class="help-text">Length of each recording (default: 1 hour)</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="playbackFile" class="form-label">Playback File *</label>
+                                <select class="form-select" id="playbackFile" required>
+                                    <option value="">Loading...</option>
+                                </select>
+                                <div class="help-text">WAV file to play during recording</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Channel Configuration -->
+                <div class="card form-section">
+                    <div class="card-body">
+                        <div class="section-header">
+                            <i class="bi bi-diagram-3"></i> Channel Configuration
+                        </div>
+
+                        <div class="row">
+                            <!-- Channel 1 (Left) -->
+                            <div class="col-md-6">
+                                <h6 class="text-primary mb-3">
+                                    <i class="bi bi-reception-4"></i> Channel 1 (Left)
+                                </h6>
+
+                                <div class="mb-3">
+                                    <label for="channel1Substance" class="form-label">Substance *</label>
+                                    <select class="form-select" id="channel1Substance" required>
+                                        <option value="">Select substance...</option>
+                                        <!-- Options loaded dynamically from vocabulary -->
+                                    </select>
+                                    <div class="form-text">
+                                        Class will be automatically determined from substance
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Channel 2 (Right) -->
+                            <div class="col-md-6">
+                                <h6 class="text-success mb-3">
+                                    <i class="bi bi-reception-4"></i> Channel 2 (Right)
+                                </h6>
+
+                                <div class="mb-3">
+                                    <label for="channel2Substance" class="form-label">Substance *</label>
+                                    <select class="form-select" id="channel2Substance" required>
+                                        <option value="">Select substance...</option>
+                                        <!-- Options loaded dynamically from vocabulary -->
+                                    </select>
+                                    <div class="form-text">
+                                        Class will be automatically determined from substance
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Beaker Configuration -->
+                <div class="card form-section">
+                    <div class="card-body">
+                        <div class="section-header">
+                            <i class="bi bi-bounding-box"></i> Beaker Setup (Optional)
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="beaker1Role" class="form-label">Beaker 1 Role</label>
+                                <select class="form-select" id="beaker1Role">
+                                    <option value="none">None (Empty slot)</option>
+                                    <option value="instrument">Instrument</option>
+                                    <option value="recording">Recording</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="beaker1Content" class="form-label">Beaker 1 Content</label>
+                                <input type="text" class="form-control" id="beaker1Content"
+                                       placeholder="e.g., Lavender">
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="beaker2Role" class="form-label">Beaker 2 Role</label>
+                                <select class="form-select" id="beaker2Role">
+                                    <option value="none">None (Empty slot)</option>
+                                    <option value="instrument">Instrument</option>
+                                    <option value="recording">Recording</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="beaker2Content" class="form-label">Beaker 2 Content</label>
+                                <input type="text" class="form-control" id="beaker2Content"
+                                       placeholder="e.g., Empty">
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Faraday Cage</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="faradayCage" checked>
+                                    <label class="form-check-label" for="faradayCage">
+                                        Used during recording (recommended)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="researcherName" class="form-label">Researcher Name</label>
+                                <input type="text" class="form-control" id="researcherName"
+                                       value="Autonomous" placeholder="Autonomous">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Settings (Collapsible) -->
+                <div class="card form-section">
+                    <div class="card-body">
+                        <div class="section-header" style="cursor: pointer;"
+                             data-bs-toggle="collapse" data-bs-target="#advancedSettings">
+                            <i class="bi bi-sliders"></i> Advanced Settings
+                            <i class="bi bi-chevron-down float-end"></i>
+                        </div>
+
+                        <div class="collapse" id="advancedSettings">
+                            <div class="advanced-settings">
+                                <!-- Auto-QC Settings -->
+                                <h6 class="mb-3"><i class="bi bi-shield-check"></i> Auto-QC Thresholds</h6>
+
+                                <div class="row mb-4">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="qcMinSeparation" class="form-label">Min Separation Score</label>
+                                        <input type="number" class="form-control" id="qcMinSeparation"
+                                               min="0" max="1" step="0.05" value="0.7">
+                                        <div class="help-text">Minimum acceptable class separation (0-1)</div>
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="qcAutoApprove" class="form-label">Auto-Approve Threshold</label>
+                                        <input type="number" class="form-control" id="qcAutoApprove"
+                                               min="0" max="1" step="0.05" value="0.8">
+                                        <div class="help-text">Auto-approve above this score</div>
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="qcAutoReject" class="form-label">Auto-Reject Threshold</label>
+                                        <input type="number" class="form-control" id="qcAutoReject"
+                                               min="0" max="1" step="0.05" value="0.6">
+                                        <div class="help-text">Auto-reject below this score</div>
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="qcMinSamples" class="form-label">Min Samples/Channel</label>
+                                        <input type="number" class="form-control" id="qcMinSamples"
+                                               min="100" step="100" value="900">
+                                        <div class="help-text">Minimum samples required per channel</div>
+                                    </div>
+                                </div>
+
+                                <!-- Training Settings -->
+                                <h6 class="mb-3"><i class="bi bi-cpu"></i> Training Configuration</h6>
+
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label for="trainingWindow" class="form-label">Sliding Window (weeks)</label>
+                                        <input type="number" class="form-control" id="trainingWindow"
+                                               min="1" step="1" value="2">
+                                        <div class="help-text">Training data window</div>
+                                    </div>
+
+                                    <div class="col-md-4 mb-3">
+                                        <label for="batchSize" class="form-label">Batch Size</label>
+                                        <input type="number" class="form-control" id="batchSize"
+                                               min="8" step="8" value="32">
+                                        <div class="help-text">Training batch size</div>
+                                    </div>
+
+                                    <div class="col-md-4 mb-3">
+                                        <label for="epochsPerCycle" class="form-label">Epochs/Cycle</label>
+                                        <input type="number" class="form-control" id="epochsPerCycle"
+                                               min="1" step="1" value="5">
+                                        <div class="help-text">Training epochs per cycle</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Preview & Actions -->
+            <div class="col-lg-4">
+                <!-- Experiment Preview -->
+                <div class="card sticky-top" style="top: 1rem;">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-eye"></i> Experiment Preview
+                    </div>
+                    <div class="card-body">
+                        <div class="preview-card" id="experimentPreview">
+                            <div class="preview-item">
+                                <span class="preview-label">Duration:</span>
+                                <span class="preview-value" id="previewDuration">2 weeks</span>
+                            </div>
+                            <div class="preview-item">
+                                <span class="preview-label">Interval:</span>
+                                <span class="preview-value" id="previewInterval">60 min</span>
+                            </div>
+                            <div class="preview-item">
+                                <span class="preview-label">Total Cycles:</span>
+                                <span class="preview-value" id="previewCycles">336</span>
+                            </div>
+                            <div class="preview-item">
+                                <span class="preview-label">Est. Runtime:</span>
+                                <span class="preview-value" id="previewRuntime">~14 days</span>
+                            </div>
+                            <div class="preview-item">
+                                <span class="preview-label">Channel 1:</span>
+                                <span class="preview-value" id="previewChannel1">—</span>
+                            </div>
+                            <div class="preview-item">
+                                <span class="preview-label">Channel 2:</span>
+                                <span class="preview-value" id="previewChannel2">—</span>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info mt-3 mb-0">
+                            <small>
+                                <i class="bi bi-info-circle"></i>
+                                <strong>Note:</strong> Experiment will run autonomously with Auto-QC and incremental training.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="card-footer bg-white">
+                        <button type="submit" class="btn btn-primary btn-lg w-100" id="createBtn">
+                            <i class="bi bi-play-circle"></i> Create & Start Experiment
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary w-100 mt-2"
+                                onclick="window.location.href='/continuous'">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Load playback files
+async function loadPlaybackFiles() {
+    try {
+        const response = await fetch('/api/rubix44/playback-files');
+        const data = await response.json();
+
+        const select = document.getElementById('playbackFile');
+        select.innerHTML = '<option value="">-- Select playback file --</option>';
+
+        if (data.success && data.files) {
+            data.files.forEach(file => {
+                const option = document.createElement('option');
+                const fileName = file.filename || file.name || 'Unknown';
+                option.value = fileName;
+                option.textContent = fileName;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load playback files:', error);
+        showAlert('Failed to load playback files. Please check rubix44 connection.', 'warning');
+    }
+}
+
+// Load substance vocabulary
+async function loadSubstances() {
+    try {
+        const response = await fetch('/api/continuous/substances');
+        const data = await response.json();
+
+        if (data.success) {
+            const ch1Select = document.getElementById('channel1Substance');
+            const ch2Select = document.getElementById('channel2Substance');
+
+            // Clear existing options (except placeholder)
+            ch1Select.innerHTML = '<option value="">Select substance...</option>';
+            ch2Select.innerHTML = '<option value="">Select substance...</option>';
+
+            // Add substance options
+            data.substances.forEach(substance => {
+                const option1 = document.createElement('option');
+                option1.value = substance.name;
+                option1.textContent = substance.display;
+                ch1Select.appendChild(option1);
+
+                const option2 = document.createElement('option');
+                option2.value = substance.name;
+                option2.textContent = substance.display;
+                ch2Select.appendChild(option2);
+            });
+
+            // Set default selections
+            ch2Select.value = 'empty';  // Default channel 2 to empty
+        }
+    } catch (error) {
+        console.error('Failed to load substances:', error);
+        showAlert('Failed to load substance vocabulary. Please refresh the page.', 'warning');
+    }
+}
+
+// Update preview in real-time
+function updatePreview() {
+    const duration = parseFloat(document.getElementById('targetDuration').value) || 0;
+    const interval = parseInt(document.getElementById('recordingInterval').value) || 60;
+
+    // Calculate total cycles
+    const totalMinutes = duration * 7 * 24 * 60;
+    const totalCycles = Math.floor(totalMinutes / interval);
+
+    // Update preview
+    document.getElementById('previewDuration').textContent = `${duration} weeks`;
+    document.getElementById('previewInterval').textContent = `${interval} min`;
+    document.getElementById('previewCycles').textContent = totalCycles.toLocaleString();
+
+    // Estimate runtime (accounting for recording time, QC, training)
+    const avgCycleTime = interval + 5; // Add 5 min overhead for QC/training
+    const totalRuntimeDays = (totalCycles * avgCycleTime) / (60 * 24);
+    document.getElementById('previewRuntime').textContent = `~${totalRuntimeDays.toFixed(1)} days`;
+
+    // Channel info
+    const ch1Substance = document.getElementById('channel1Substance');
+    const ch1Source = ch1Substance.options[ch1Substance.selectedIndex]?.textContent || '—';
+    const ch2Substance = document.getElementById('channel2Substance');
+    const ch2Source = ch2Substance.options[ch2Substance.selectedIndex]?.textContent || '—';
+
+    document.getElementById('previewChannel1').textContent = ch1Source;
+    document.getElementById('previewChannel2').textContent = ch2Source;
+}
+
+// Show alert in container
+function showAlert(message, type = 'info') {
+    const alertDiv = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    document.getElementById('alertContainer').innerHTML = alertDiv;
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Form submission
+document.getElementById('experimentForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const createBtn = document.getElementById('createBtn');
+    const originalText = createBtn.innerHTML;
+    createBtn.disabled = true;
+    createBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating...';
+
+    try {
+        // Gather form data
+        const formData = {
+            experiment_name: document.getElementById('experimentName').value,
+            target_duration_weeks: parseFloat(document.getElementById('targetDuration').value),
+            recording_interval_minutes: parseInt(document.getElementById('recordingInterval').value),
+            recording_duration_seconds: parseInt(document.getElementById('recordingDuration').value),
+            playback_file: document.getElementById('playbackFile').value,
+            channel_1_substance: document.getElementById('channel1Substance').value,
+            channel_2_substance: document.getElementById('channel2Substance').value,
+            beaker_1_role: document.getElementById('beaker1Role').value,
+            beaker_1_content: document.getElementById('beaker1Content').value,
+            beaker_2_role: document.getElementById('beaker2Role').value,
+            beaker_2_content: document.getElementById('beaker2Content').value,
+            faraday_cage_used: document.getElementById('faradayCage').checked,
+            researcher_name: document.getElementById('researcherName').value,
+            auto_qc_min_separation_score: parseFloat(document.getElementById('qcMinSeparation').value),
+            auto_qc_auto_approve_threshold: parseFloat(document.getElementById('qcAutoApprove').value),
+            auto_qc_auto_reject_threshold: parseFloat(document.getElementById('qcAutoReject').value),
+            auto_qc_min_samples_per_channel: parseInt(document.getElementById('qcMinSamples').value),
+            training_sliding_window_weeks: parseInt(document.getElementById('trainingWindow').value),
+            training_batch_size: parseInt(document.getElementById('batchSize').value),
+            training_epochs_per_cycle: parseInt(document.getElementById('epochsPerCycle').value)
+        };
+
+        // Create experiment
+        const response = await fetch('/api/continuous/experiments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showAlert(`Experiment created successfully! ID: ${result.experiment_id}`, 'success');
+
+            // Ask if user wants to start immediately
+            if (confirm('Experiment created! Do you want to start it now?')) {
+                const startResponse = await fetch(`/api/continuous/experiments/${result.experiment_id}/start`, {
+                    method: 'POST'
+                });
+                const startResult = await startResponse.json();
+
+                if (startResult.success) {
+                    showAlert('Experiment started! Redirecting to dashboard...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/continuous';
+                    }, 2000);
+                } else {
+                    showAlert(`Started experiment but got warning: ${startResult.error}`, 'warning');
+                }
+            } else {
+                // Just redirect to dashboard
+                setTimeout(() => {
+                    window.location.href = '/continuous';
+                }, 2000);
+            }
+        } else {
+            showAlert(`Failed to create experiment: ${result.error}`, 'danger');
+            createBtn.disabled = false;
+            createBtn.innerHTML = originalText;
+        }
+    } catch (error) {
+        console.error('Error creating experiment:', error);
+        showAlert('An unexpected error occurred. Please try again.', 'danger');
+        createBtn.disabled = false;
+        createBtn.innerHTML = originalText;
+    }
+});
+
+// Update preview on input changes
+document.getElementById('targetDuration').addEventListener('input', updatePreview);
+document.getElementById('recordingInterval').addEventListener('input', updatePreview);
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    loadSubstances();
+    loadPlaybackFiles();
+    updatePreview();
+
+    // Add change listeners to update preview
+    document.getElementById('channel1Substance').addEventListener('change', updatePreview);
+    document.getElementById('channel2Substance').addEventListener('change', updatePreview);
+});
+</script>
+{% endblock %}

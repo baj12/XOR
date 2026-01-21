@@ -1,0 +1,797 @@
+{% extends "base.html" %}
+
+{% block title %}Annotate Recording - Recording Management System{% endblock %}
+
+{% block content %}
+<style>
+    .fixed-messages-panel {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-height: 150px;
+        overflow-y: auto;
+        background: #f8f9fa;
+        border-top: 2px solid #dee2e6;
+        z-index: 1000;
+        padding: 10px;
+    }
+    .main-content {
+        padding-bottom: 170px; /* Space for fixed message panel */
+    }
+    .scrollable-recordings {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+</style>
+
+<div class="container-fluid main-content">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="bi bi-pencil-square"></i> Recording Management</h2>
+            <p class="text-muted">Start new recordings or annotate existing ones</p>
+        </div>
+    </div>
+
+    <!-- Recording Control Panel (Collapsible) -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card border-success shadow-sm">
+                <div class="card-header bg-success text-white" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#recordingControlPanel">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="bi bi-record-circle"></i> <strong>Start New Recording</strong>
+                        </div>
+                        <i class="bi bi-chevron-down" id="recording-chevron"></i>
+                    </div>
+                </div>
+                <div class="collapse" id="recordingControlPanel">
+                    <div class="card-body">
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle"></i> <strong>Recording Control:</strong> Configure and start a new recording session. Once started, you can stop it or let it complete automatically.
+                        </div>
+
+                        <div class="row">
+                            <!-- Start Recording Form -->
+                            <div class="col-md-8">
+                                <h5 class="mb-3">Recording Configuration</h5>
+                                <form id="start-recording-form">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label"><strong>Playback File</strong></label>
+                                            <select class="form-select" id="playback-file" required>
+                                                <option value="">Select playback file...</option>
+                                            </select>
+                                            <small class="text-muted">Audio file to play during recording</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label"><strong>Duration (seconds)</strong></label>
+                                            <input type="number" class="form-control" id="duration" value="3600" min="1" max="7200" required>
+                                            <small class="text-muted">Default: 1 hour</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label"><strong>Output Prefix</strong></label>
+                                            <input type="text" class="form-control" id="output-prefix" value="recording" required>
+                                            <small class="text-muted">File name prefix</small>
+                                        </div>
+                                    </div>
+                                    <div class="row mt-3">
+                                        <div class="col-12">
+                                            <button type="submit" class="btn btn-success btn-lg" id="start-recording-btn">
+                                                <i class="bi bi-record-circle-fill"></i> Start Recording
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <!-- Recording Status & Stop Button -->
+                            <div class="col-md-4">
+                                <h5 class="mb-3">Recording Status</h5>
+                                <div id="recording-status-display" style="display:none;">
+                                    <!-- Recording status shown here -->
+                                </div>
+                                <div id="recording-idle-message" class="alert alert-secondary">
+                                    <i class="bi bi-dash-circle"></i> No recording in progress
+                                </div>
+                                <button type="button" class="btn btn-danger btn-lg w-100" id="stop-recording-btn" style="display:none;" onclick="stopRecording()">
+                                    <i class="bi bi-stop-circle-fill"></i> Stop Recording Now
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Annotation Panel -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card border-primary shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-clipboard-data"></i> <strong>Annotation Workspace</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Column 1: Available Recordings List (Scrollable) -->
+                        <div class="col-md-4 border-end">
+                            <h5 class="mb-3">
+                                <i class="bi bi-list-ul"></i> Available Recordings
+                                <button class="btn btn-sm btn-outline-primary float-end" onclick="refreshRubix44List()">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
+                            </h5>
+                            <div class="scrollable-recordings" id="rubix44-list-container">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+
+                        <!-- Column 2: Annotation Form -->
+                        <div class="col-md-8">
+                            <div class="px-3">
+                                <h5 class="mb-3">
+                                    <i class="bi bi-clipboard-data"></i> Metadata Form
+                                    <span id="selected-session-id" class="badge bg-secondary float-end">No recording selected</span>
+                                </h5>
+                    <form id="annotation-form">
+                        <input type="hidden" id="session_id" name="session_id">
+
+                        <!-- Session Info (Auto-populated, Read-only) -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <label class="form-label">Recording Date <small class="text-muted">(auto)</small></label>
+                                <input type="text" class="form-control" id="recording_date" readonly>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Duration (sec) <small class="text-muted">(auto)</small></label>
+                                <input type="text" class="form-control" id="duration_seconds" readonly>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Playback File <small class="text-muted">(auto)</small></label>
+                                <input type="text" class="form-control" id="playback_file_display" readonly>
+                            </div>
+                        </div>
+
+                        <!-- Channel Configuration -->
+                        <h5 class="mb-3"><i class="bi bi-hdd-network"></i> Channel Configuration</h5>
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-8">
+                                        <label class="form-label">Channel 1 (Left) Source</label>
+                                        <input type="text" class="form-control" id="channel_1_source"
+                                               placeholder="e.g., Beaker_A, Lavender, Instrument_1" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Expected Class</label>
+                                        <select class="form-select" id="channel_1_expected_class" required>
+                                            <option value="">Select...</option>
+                                            <option value="0">0 - Negative</option>
+                                            <option value="1">1 - Positive</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <label class="form-label">Channel 2 (Right) Source</label>
+                                        <input type="text" class="form-control" id="channel_2_source"
+                                               placeholder="e.g., Beaker_B, Empty, Instrument_2" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Expected Class</label>
+                                        <select class="form-select" id="channel_2_expected_class" required>
+                                            <option value="">Select...</option>
+                                            <option value="0">0 - Negative</option>
+                                            <option value="1">1 - Positive</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Beaker Setup (2 Beakers) -->
+                        <h5 class="mb-3"><i class="bi bi-cup"></i> Beaker Setup (2 Beakers)</h5>
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Beaker 1 Role</label>
+                                        <select class="form-select" id="beaker_1_role" required>
+                                            <option value="none">None (Empty slot)</option>
+                                            <option value="instrument">Instrument</option>
+                                            <option value="recording">Recording</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label">Beaker 1 Content</label>
+                                        <input list="beaker-content-list" type="text" class="form-control" id="beaker_1_content"
+                                               placeholder="Select or type new content...">
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Beaker 2 Role</label>
+                                        <select class="form-select" id="beaker_2_role" required>
+                                            <option value="none">None (Empty slot)</option>
+                                            <option value="instrument">Instrument</option>
+                                            <option value="recording">Recording</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label">Beaker 2 Content</label>
+                                        <input list="beaker-content-list" type="text" class="form-control" id="beaker_2_content"
+                                               placeholder="Select or type new content...">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Datalist for beaker content suggestions -->
+                        <datalist id="beaker-content-list">
+                            <option value="Empty">
+                            <option value="Lavender">
+                            <option value="Lavendel">
+                            <option value="Water">
+                            <option value="Ethanol">
+                            <option value="Noise source">
+                            <option value="Background noise">
+                            <option value="Rubix">
+                        </datalist>
+
+                        <!-- Experimental Conditions -->
+                        <h5 class="mb-3"><i class="bi bi-gear"></i> Experimental Conditions</h5>
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="faraday_cage_used">
+                                            <label class="form-check-label" for="faraday_cage_used">
+                                                <strong>Faraday Cage Used</strong>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Experiment ID</label>
+                                        <input list="experiment-list" type="text" class="form-select" id="experiment_id"
+                                               placeholder="Select or type new..." required>
+                                        <datalist id="experiment-list">
+                                            <!-- Populated by JavaScript -->
+                                        </datalist>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Researcher Name</label>
+                                        <input type="text" class="form-control" id="researcher_name"
+                                               value="Bernd" required>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-12">
+                                        <label class="form-label">Experiment Description</label>
+                                        <textarea class="form-control" id="experiment_description" rows="2"
+                                                  placeholder="Brief description of what you're testing..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Weather & Comments -->
+                        <h5 class="mb-3"><i class="bi bi-cloud-sun"></i> Notes</h5>
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <div class="row mb-2" id="weather-display" style="display:none;">
+                                    <div class="col-12">
+                                        <div class="alert alert-info mb-2">
+                                            <small id="weather-info"></small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-12">
+                                        <label class="form-label">Comments & Notes</label>
+                                        <textarea class="form-control" id="comments" rows="3"
+                                                  placeholder="Any observations, issues, or notes about this recording..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button type="button" class="btn btn-outline-secondary" onclick="clearForm()">
+                                <i class="bi bi-x-circle"></i> Clear Form
+                            </button>
+                            <button type="submit" class="btn btn-primary" id="save-metadata-btn">
+                                <i class="bi bi-save"></i> Save Metadata
+                            </button>
+                            <button type="button" class="btn btn-success" onclick="saveAndMarkComplete()" id="save-complete-btn">
+                                <i class="bi bi-check-circle"></i> Save & Mark Complete
+                            </button>
+                        </div>
+                    </form>
+                            </div><!-- px-3 -->
+                        </div><!-- col-md-8 -->
+                    </div><!-- row -->
+                </div><!-- card-body -->
+            </div><!-- card border-primary -->
+        </div><!-- col-12 -->
+    </div><!-- row mb-3 -->
+</div><!-- container-fluid -->
+
+<!-- Fixed Messages Panel at Bottom -->
+<div class="fixed-messages-panel" id="messages-panel">
+    <div id="messages-container"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedSessionId = null;
+let weatherData = null;
+let messageCount = 0;
+
+// Load rubix44 recordings on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadExperiments();
+    await loadPlaybackFiles();
+    await refreshRubix44List();
+    checkRecordingStatus();
+    setInterval(checkRecordingStatus, 5000); // Check every 5 seconds
+
+    // Handle collapsible panel chevron rotation
+    const recordingPanel = document.getElementById('recordingControlPanel');
+    recordingPanel.addEventListener('shown.bs.collapse', function() {
+        document.getElementById('recording-chevron').classList.remove('bi-chevron-down');
+        document.getElementById('recording-chevron').classList.add('bi-chevron-up');
+    });
+    recordingPanel.addEventListener('hidden.bs.collapse', function() {
+        document.getElementById('recording-chevron').classList.remove('bi-chevron-up');
+        document.getElementById('recording-chevron').classList.add('bi-chevron-down');
+    });
+});
+
+async function loadExperiments() {
+    try {
+        const response = await fetch('/api/experiments');
+        const data = await response.json();
+
+        const datalist = document.getElementById('experiment-list');
+        data.experiments.forEach(exp => {
+            const option = document.createElement('option');
+            option.value = exp.experiment_id;
+            option.textContent = `${exp.experiment_id} - ${exp.experiment_name}`;
+            datalist.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load experiments:', error);
+        showAlert('Warning: Could not load experiment list', 'warning');
+    }
+}
+
+async function loadPlaybackFiles() {
+    try {
+        const response = await fetch('/api/rubix44/playback-files');
+        const data = await response.json();
+
+        if (data.success && data.files) {
+            const select = document.getElementById('playback-file');
+            data.files.forEach(file => {
+                const option = document.createElement('option');
+                // rubix44 API returns 'filename' property, not 'name'
+                const fileName = file.filename || file.name || 'Unknown';
+                option.value = fileName;
+                option.textContent = fileName;
+                select.appendChild(option);
+            });
+        } else {
+            showAlert('Warning: No playback files available', 'warning');
+        }
+    } catch (error) {
+        console.error('Failed to load playback files:', error);
+        showAlert('Warning: Could not load playback files', 'warning');
+    }
+}
+
+async function refreshRubix44List() {
+    const container = document.getElementById('rubix44-list-container');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Loading...</div>';
+
+    try {
+        const response = await fetch('/api/rubix44/recordings');
+        const data = await response.json();
+
+        if (data.success) {
+            let html = '<div class="list-group list-group-flush">';
+
+            if (data.recordings.length === 0) {
+                html += '<div class="text-muted text-center p-3">No recordings found on Rubix44</div>';
+            } else {
+                data.recordings.forEach(rec => {
+                    const stereoFile = rec.files.find(f => f.name.includes('_stereo.wav'));
+                    const sizeKB = stereoFile ? (stereoFile.size / 1024).toFixed(0) : '?';
+
+                    html += `
+                        <a href="#" class="list-group-item list-group-item-action"
+                           onclick="selectRecording('${rec.id}', event)">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1"><small>${rec.id}</small></h6>
+                                <small class="text-muted">${sizeKB} KB</small>
+                            </div>
+                            <small class="text-muted">${rec.timestamp}</small>
+                        </a>
+                    `;
+                });
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="alert alert-danger">Failed to load: ' + data.error + '</div>';
+        }
+    } catch (error) {
+        console.error('Failed to fetch rubix44 recordings:', error);
+        container.innerHTML = '<div class="alert alert-danger">Error connecting to Rubix44</div>';
+    }
+}
+
+async function selectRecording(sessionId, event) {
+    if (event) event.preventDefault();
+
+    selectedSessionId = sessionId;
+    document.getElementById('session_id').value = sessionId;
+    document.getElementById('selected-session-id').textContent = sessionId;
+    document.getElementById('selected-session-id').className = 'badge bg-primary float-end';
+
+    // Extract date from session ID (format: recording_2026-01-04_16-30-00)
+    const parts = sessionId.split('_');
+    if (parts.length >= 3) {
+        const dateStr = parts[1] + ' ' + parts[2].replace(/-/g, ':');
+        document.getElementById('recording_date').value = dateStr;
+    }
+
+    // Try to load existing metadata from database
+    try {
+        const response = await fetch(`/api/recordings/${sessionId}`);
+        const data = await response.json();
+
+        if (data.success && data.recording) {
+            // Populate form with existing data
+            populateForm(data.recording);
+            showAlert('Loaded existing metadata for ' + sessionId, 'info');
+        } else {
+            // New recording - try to get duration and playback file from rubix44
+            await populateFromRubix44(sessionId);
+            showAlert('Ready to annotate ' + sessionId, 'success');
+        }
+    } catch (error) {
+        console.error('Error loading metadata:', error);
+        await populateFromRubix44(sessionId);
+    }
+}
+
+async function populateFromRubix44(sessionId) {
+    // Try to get additional info from rubix44 status/history
+    try {
+        const response = await fetch('/api/rubix44/status');
+        const data = await response.json();
+
+        if (data.session_id === sessionId) {
+            if (data.duration_seconds) {
+                document.getElementById('duration_seconds').value = data.duration_seconds;
+            }
+            if (data.playback_file) {
+                document.getElementById('playback_file_display').value = data.playback_file;
+            }
+        }
+    } catch (error) {
+        console.error('Could not fetch rubix44 details:', error);
+    }
+}
+
+function populateForm(recording) {
+    // Populate all form fields
+    Object.keys(recording).forEach(key => {
+        const element = document.getElementById(key);
+        if (element) {
+            if (element.type === 'checkbox') {
+                element.checked = recording[key];
+            } else {
+                element.value = recording[key] || '';
+            }
+        }
+    });
+
+    // Show weather if available
+    if (recording.weather_temperature) {
+        const weatherInfo = `${recording.weather_temperature}°C, ${recording.weather_humidity}% humidity, ${recording.weather_conditions}`;
+        document.getElementById('weather-info').innerHTML = `<strong>Weather:</strong> ${weatherInfo}`;
+        document.getElementById('weather-display').style.display = 'block';
+
+        // Store weather data
+        weatherData = {
+            weather_temperature: recording.weather_temperature,
+            weather_humidity: recording.weather_humidity,
+            weather_pressure: recording.weather_pressure,
+            weather_conditions: recording.weather_conditions,
+            weather_wind_speed: recording.weather_wind_speed,
+            weather_timestamp: recording.weather_timestamp
+        };
+    }
+}
+
+async function fetchWeather() {
+    try {
+        const response = await fetch('/api/weather');
+        const data = await response.json();
+
+        if (data.success) {
+            weatherData = data.weather;
+
+            const weatherInfo = `${weatherData.weather_temperature}°C, ${weatherData.weather_humidity}% humidity, ${weatherData.weather_conditions}`;
+            document.getElementById('weather-info').innerHTML = `<strong>Weather captured:</strong> ${weatherInfo} <small>(${formatDateTime(weatherData.weather_timestamp)})</small>`;
+            document.getElementById('weather-display').style.display = 'block';
+
+            return true;
+        } else {
+            showAlert('Failed to fetch weather: ' + data.error, 'warning');
+            return false;
+        }
+    } catch (error) {
+        showAlert('Error fetching weather data', 'warning');
+        return false;
+    }
+}
+
+document.getElementById('annotation-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await saveMetadata(false);
+});
+
+async function saveAndMarkComplete() {
+    await saveMetadata(true);
+}
+
+async function saveMetadata(markComplete) {
+    if (!selectedSessionId) {
+        showAlert('Please select a recording first', 'warning');
+        return;
+    }
+
+    // Auto-fetch weather if not already fetched
+    if (!weatherData) {
+        showAlert('Fetching weather data...', 'info');
+        await fetchWeather();
+    }
+
+    // Collect form data
+    const formData = {
+        session_id: selectedSessionId,
+        recording_date: document.getElementById('recording_date').value,
+        channel_1_source: document.getElementById('channel_1_source').value,
+        channel_2_source: document.getElementById('channel_2_source').value,
+        channel_1_expected_class: parseInt(document.getElementById('channel_1_expected_class').value),
+        channel_2_expected_class: parseInt(document.getElementById('channel_2_expected_class').value),
+        beaker_1_role: document.getElementById('beaker_1_role').value,
+        beaker_1_content: document.getElementById('beaker_1_content').value,
+        beaker_2_role: document.getElementById('beaker_2_role').value,
+        beaker_2_content: document.getElementById('beaker_2_content').value,
+        beaker_3_role: 'not_used',  // Always set to not_used (backward compatibility)
+        beaker_3_content: '',
+        faraday_cage_used: document.getElementById('faraday_cage_used').checked,
+        experiment_id: document.getElementById('experiment_id').value,
+        researcher_name: document.getElementById('researcher_name').value,
+        experiment_description: document.getElementById('experiment_description').value,
+        comments: document.getElementById('comments').value,
+        metadata_complete: markComplete
+    };
+
+    // Add weather data if fetched
+    if (weatherData) {
+        Object.assign(formData, weatherData);
+    }
+
+    try {
+        const response = await fetch(`/api/recordings/${selectedSessionId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(formData)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const msg = markComplete ? 'Metadata saved and marked complete!' : 'Metadata saved!';
+            showAlert(msg, 'success');
+
+            if (markComplete) {
+                // Clear form and refresh list
+                setTimeout(() => {
+                    clearForm();
+                    refreshRubix44List();
+                }, 1500);
+            }
+        } else {
+            showAlert('Failed to save: ' + data.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error saving metadata:', error);
+        showAlert('Error saving metadata', 'danger');
+    }
+}
+
+function clearForm() {
+    document.getElementById('annotation-form').reset();
+    selectedSessionId = null;
+    weatherData = null;
+    document.getElementById('selected-session-id').textContent = 'No recording selected';
+    document.getElementById('selected-session-id').className = 'badge bg-secondary float-end';
+    document.getElementById('weather-display').style.display = 'none';
+}
+
+// Start new recording
+document.getElementById('start-recording-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const playbackFile = document.getElementById('playback-file').value;
+    const duration = parseInt(document.getElementById('duration').value);
+    const prefix = document.getElementById('output-prefix').value;
+
+    try {
+        document.getElementById('start-recording-btn').disabled = true;
+        showAlert('Starting recording...', 'info');
+
+        const response = await fetch('/api/rubix44/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                playback_file: playbackFile,
+                duration: duration,
+                output_prefix: prefix
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert(`Recording started! Session ID: ${data.session_id}`, 'success');
+        } else {
+            showAlert('Failed to start recording: ' + data.error, 'danger');
+            document.getElementById('start-recording-btn').disabled = false;
+        }
+    } catch (error) {
+        showAlert('Error starting recording', 'danger');
+        document.getElementById('start-recording-btn').disabled = false;
+    }
+});
+
+async function stopRecording() {
+    try {
+        showAlert('Stopping recording...', 'info');
+
+        const response = await fetch('/api/rubix44/stop', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('Recording stopped successfully!', 'success');
+            document.getElementById('stop-recording-btn').style.display = 'none';
+            setTimeout(refreshRubix44List, 2000);
+        } else {
+            showAlert('Failed to stop recording: ' + data.error, 'danger');
+        }
+    } catch (error) {
+        showAlert('Error: Stop recording requires rubix44 server update', 'warning');
+    }
+}
+
+async function checkRecordingStatus() {
+    try {
+        const response = await fetch('/api/rubix44/status');
+        const data = await response.json();
+
+        const idleMessage = document.getElementById('recording-idle-message');
+        const statusDisplay = document.getElementById('recording-status-display');
+        const stopBtn = document.getElementById('stop-recording-btn');
+        const startBtn = document.getElementById('start-recording-btn');
+
+        if (data.status === 'recording') {
+            startBtn.disabled = true;
+            stopBtn.style.display = 'block';
+            idleMessage.style.display = 'none';
+            statusDisplay.style.display = 'block';
+
+            // Build status display with progress bar and time estimation
+            let statusHtml = '<div class="alert alert-warning mb-0">';
+            statusHtml += '<strong><i class="bi bi-record-circle-fill text-danger"></i> Recording in progress...</strong><br>';
+
+            if (data.session_id) {
+                statusHtml += `<small class="text-muted">Session: ${data.session_id}</small><br>`;
+            }
+
+            // Show time information if available
+            if (data.elapsed_formatted && data.remaining_formatted && data.duration_formatted) {
+                statusHtml += '<div class="mt-2">';
+                statusHtml += `<div class="d-flex justify-content-between mb-1">`;
+                statusHtml += `<span><i class="bi bi-clock-history"></i> Elapsed: <strong>${data.elapsed_formatted}</strong></span>`;
+                statusHtml += `<span><i class="bi bi-hourglass-split"></i> Remaining: <strong>${data.remaining_formatted}</strong></span>`;
+                statusHtml += `</div>`;
+                statusHtml += `<small class="text-muted">Total duration: ${data.duration_formatted}</small>`;
+                statusHtml += '</div>';
+
+                // Progress bar
+                if (data.progress_percent !== undefined) {
+                    const percent = Math.min(100, Math.max(0, data.progress_percent)).toFixed(1);
+                    statusHtml += '<div class="progress mt-2" style="height: 25px;">';
+                    statusHtml += `<div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" `;
+                    statusHtml += `role="progressbar" style="width: ${percent}%" `;
+                    statusHtml += `aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">`;
+                    statusHtml += `${percent}%`;
+                    statusHtml += '</div></div>';
+                }
+            } else if (data.elapsed_seconds) {
+                // Fallback to raw seconds if formatted strings not available
+                statusHtml += `<br><small>Elapsed: ${data.elapsed_seconds}s</small>`;
+            }
+
+            statusHtml += '<div class="mt-2"><div class="spinner-border spinner-border-sm" role="status"></div></div>';
+            statusHtml += '</div>';
+
+            statusDisplay.innerHTML = statusHtml;
+        } else {
+            startBtn.disabled = false;
+            stopBtn.style.display = 'none';
+            idleMessage.style.display = 'block';
+
+            if (statusDisplay.style.display !== 'none' && data.status === 'idle') {
+                // Recording just finished
+                showAlert('Recording completed! Refreshing list...', 'success');
+                setTimeout(refreshRubix44List, 2000);
+                statusDisplay.style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('Error checking status:', error);
+    }
+}
+
+function showAlert(message, type) {
+    messageCount++;
+    const container = document.getElementById('messages-container');
+    const alertId = 'alert-' + messageCount;
+
+    const alertDiv = document.createElement('div');
+    alertDiv.id = alertId;
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show mb-2`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    container.appendChild(alertDiv);
+
+    // Auto-scroll to bottom
+    document.getElementById('messages-panel').scrollTop = document.getElementById('messages-panel').scrollHeight;
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        const alert = document.getElementById(alertId);
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
+}
+
+function formatDateTime(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+}
+</script>
+{% endblock %}

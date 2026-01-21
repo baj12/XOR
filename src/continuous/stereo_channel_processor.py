@@ -42,24 +42,29 @@ class StereoChannelProcessor:
 
     def process_stereo_file(self,
                            wav_path: Path,
-                           max_samples_per_channel: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                           max_samples_per_channel: Optional[int] = None,
+                           positive_label: int = 1,
+                           negative_label: int = 0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Process stereo WAV file and extract features from both channels.
 
         Args:
             wav_path: Path to stereo WAV file
             max_samples_per_channel: Maximum segments to extract per channel (None = all)
+            positive_label: Label for left channel (default: 1)
+            negative_label: Label for right channel (default: 0)
 
         Returns:
             Tuple of (X_left, y_left, X_right, y_right, offsets_left, offsets_right)
-            - X_left: Features from left channel (positive class), shape (n_samples, 680)
-            - y_left: Labels for left channel (all 1s), shape (n_samples,)
-            - X_right: Features from right channel (negative class), shape (n_samples, 680)
-            - y_right: Labels for right channel (all 0s), shape (n_samples,)
+            - X_left: Features from left channel, shape (n_samples, 680)
+            - y_left: Labels for left channel (all positive_label), shape (n_samples,)
+            - X_right: Features from right channel, shape (n_samples, 680)
+            - y_right: Labels for right channel (all negative_label), shape (n_samples,)
             - offsets_left: Segment start times in original file (seconds)
             - offsets_right: Segment start times in original file (seconds)
         """
         logger.info(f"Processing stereo file: {wav_path}")
+        logger.info(f"Using labels: left={positive_label}, right={negative_label}")
 
         # Load stereo audio
         audio, sr = librosa.load(str(wav_path), sr=self.sample_rate, mono=False)
@@ -72,8 +77,8 @@ class StereoChannelProcessor:
             raise ValueError(f"Expected 2 channels, got {audio.shape[0]}: {wav_path}")
 
         # Separate channels
-        left_channel = audio[0, :]   # Channel 0 = positive
-        right_channel = audio[1, :]  # Channel 1 = negative
+        left_channel = audio[0, :]   # Channel 0
+        right_channel = audio[1, :]  # Channel 1
 
         duration_sec = len(left_channel) / sr
         logger.info(f"Duration: {duration_sec:.1f}s ({duration_sec/60:.1f} min)")
@@ -86,11 +91,12 @@ class StereoChannelProcessor:
             right_channel, sr, max_samples_per_channel
         )
 
-        # Create labels
-        y_left = np.ones(len(X_left), dtype=int)   # Positive class
-        y_right = np.zeros(len(X_right), dtype=int)  # Negative class
+        # Create labels using metadata-specified values
+        y_left = np.full(len(X_left), positive_label, dtype=int)
+        y_right = np.full(len(X_right), negative_label, dtype=int)
 
-        logger.info(f"Extracted {len(X_left)} positive samples, {len(X_right)} negative samples")
+        logger.info(f"Extracted {len(X_left)} left channel (label={positive_label}) samples, "
+                   f"{len(X_right)} right channel (label={negative_label}) samples")
         logger.info(f"Feature dimensions: {X_left.shape[1]}D")
 
         return X_left, y_left, X_right, y_right, offsets_left, offsets_right

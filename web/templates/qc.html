@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+
+{% block title %}Quality Control - Recording Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <h2>Quality Control Visualization</h2>
+    <p class="text-muted">Review recording quality through dimensionality reduction plots</p>
+
+    <div class="row">
+        <!-- Left Column: Recording Selection -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-warning">
+                    <h5 class="card-title mb-0">Recordings Pending QC</h5>
+                </div>
+                <div class="card-body">
+                    <div id="recordingsList" class="list-group" style="max-height: 600px; overflow-y: auto;">
+                        <p class="text-muted">Loading...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Selected Recording Info -->
+            <div class="card mt-3" id="recordingInfo" style="display: none;">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">Recording Details</h6>
+                </div>
+                <div class="card-body">
+                    <p><strong>Session ID:</strong> <span id="infoSessionId"></span></p>
+                    <p><strong>Date:</strong> <span id="infoDate"></span></p>
+                    <p><strong>Duration:</strong> <span id="infoDuration"></span>s</p>
+                    <p><strong>Ch1:</strong> <span id="infoCh1"></span> (class <span id="infoCh1Class"></span>)</p>
+                    <p><strong>Ch2:</strong> <span id="infoCh2"></span> (class <span id="infoCh2Class"></span>)</p>
+                    <p><strong>Experiment:</strong> <span id="infoExperiment"></span></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Visualizations -->
+        <div class="col-md-8">
+            <div id="visualizationArea" style="display: none;">
+                <!-- Metrics Summary -->
+                <div class="card mb-3">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="card-title mb-0">Class Separation Metrics</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h6>Samples</h6>
+                                <p id="metricSamples">-</p>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Silhouette Score</h6>
+                                <p id="metricSilhouette">-</p>
+                                <small id="metricInterpretation" class="text-muted"></small>
+                            </div>
+                            <div class="col-md-4">
+                                <h6>Separation Quality</h6>
+                                <p id="metricSeparation">-</p>
+                                <small id="metricSeparationRatio" class="text-muted"></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Plot Tabs -->
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" id="pca-tab" data-bs-toggle="tab" href="#pca" role="tab">PCA (1-2)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="pca34-tab" data-bs-toggle="tab" href="#pca34" role="tab">PCA (3-4)</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="tsne-tab" data-bs-toggle="tab" href="#tsne" role="tab">t-SNE</a>
+                            </li>
+                            <li class="nav-item" id="umapTabItem" style="display: none;">
+                                <a class="nav-link" id="umap-tab" data-bs-toggle="tab" href="#umap" role="tab">UMAP</a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content">
+                            <div class="tab-pane fade show active" id="pca" role="tabpanel">
+                                <div id="plotPCA" style="width: 100%; height: 500px;"></div>
+                                <p class="text-muted mt-2"><small>PCA dimensions 1-2 | Explained variance: <span id="pcaVariance12"></span></small></p>
+                            </div>
+                            <div class="tab-pane fade" id="pca34" role="tabpanel">
+                                <div id="plotPCA34" style="width: 100%; height: 500px;"></div>
+                                <p class="text-muted mt-2"><small>PCA dimensions 3-4 | Explained variance: <span id="pcaVariance34"></span></small></p>
+                            </div>
+                            <div class="tab-pane fade" id="tsne" role="tabpanel">
+                                <div id="plotTSNE" style="width: 100%; height: 500px;"></div>
+                                <p class="text-muted mt-2"><small>t-SNE dimensionality reduction</small></p>
+                            </div>
+                            <div class="tab-pane fade" id="umap" role="tabpanel">
+                                <div id="plotUMAP" style="width: 100%; height: 500px;"></div>
+                                <p class="text-muted mt-2"><small>UMAP dimensionality reduction</small></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QC Decision -->
+                <div class="card mt-3">
+                    <div class="card-header bg-light">
+                        <h5 class="card-title mb-0">QC Decision</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="qcNotes" class="form-label">Notes (optional for approval, required for rejection)</label>
+                            <textarea class="form-control" id="qcNotes" rows="3" placeholder="Enter QC notes or rejection reason..."></textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success" id="btnApprove">
+                                <i class="bi bi-check-circle"></i> Approve
+                            </button>
+                            <button class="btn btn-danger" id="btnReject">
+                                <i class="bi bi-x-circle"></i> Reject
+                            </button>
+                            <button class="btn btn-secondary ms-auto" id="btnClear">Clear Selection</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="emptyState" class="text-center py-5">
+                <i class="bi bi-bar-chart" style="font-size: 4rem; color: #ccc;"></i>
+                <p class="text-muted mt-3">Select a recording from the left to view QC visualizations</p>
+            </div>
+
+            <div id="loadingState" style="display: none;" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="text-muted mt-3">Extracting features and generating visualizations...</p>
+                <p class="text-muted"><small>This may take 30-60 seconds for large recordings</small></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include Plotly.js -->
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+<script>
+let selectedSessionId = null;
+let currentData = null;
+
+// Load recordings pending QC
+async function loadPendingRecordings() {
+    try {
+        const response = await fetch('/api/recordings?status=pending_qc&limit=100');
+        const result = await response.json();
+
+        const list = document.getElementById('recordingsList');
+
+        if (!result.success || result.recordings.length === 0) {
+            list.innerHTML = '<p class="text-muted">No recordings pending QC</p>';
+            return;
+        }
+
+        list.innerHTML = '';
+        result.recordings.forEach(recording => {
+            const item = document.createElement('a');
+            item.className = 'list-group-item list-group-item-action';
+            item.href = '#';
+            item.innerHTML = `
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">${recording.session_id}</h6>
+                    <small>${new Date(recording.recording_date).toLocaleDateString()}</small>
+                </div>
+                <p class="mb-1"><small>Ch1: ${recording.channel_1_source} | Ch2: ${recording.channel_2_source}</small></p>
+                <small class="text-muted">${recording.duration_seconds}s</small>
+            `;
+            item.onclick = (e) => {
+                e.preventDefault();
+                selectRecording(recording);
+            };
+            list.appendChild(item);
+        });
+    } catch (error) {
+        console.error('Failed to load recordings:', error);
+        document.getElementById('recordingsList').innerHTML =
+            '<p class="text-danger">Failed to load recordings</p>';
+    }
+}
+
+// Select recording and extract features
+async function selectRecording(recording) {
+    selectedSessionId = recording.session_id;
+
+    // Update recording info
+    document.getElementById('infoSessionId').textContent = recording.session_id;
+    document.getElementById('infoDate').textContent = new Date(recording.recording_date).toLocaleString();
+    document.getElementById('infoDuration').textContent = recording.duration_seconds;
+    document.getElementById('infoCh1').textContent = recording.channel_1_source;
+    document.getElementById('infoCh1Class').textContent = recording.channel_1_expected_class;
+    document.getElementById('infoCh2').textContent = recording.channel_2_source;
+    document.getElementById('infoCh2Class').textContent = recording.channel_2_expected_class;
+    document.getElementById('infoExperiment').textContent = recording.experiment_id || 'N/A';
+    document.getElementById('recordingInfo').style.display = 'block';
+
+    // Show loading state
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('visualizationArea').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+
+    // Highlight selected in list
+    document.querySelectorAll('#recordingsList .list-group-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    event.target.closest('.list-group-item').classList.add('active');
+
+    try {
+        // Extract features
+        const response = await fetch(`/api/qc/extract-features/${recording.session_id}`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+            alert('Failed to extract features: ' + result.error);
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+            return;
+        }
+
+        currentData = result.data;
+
+        // Update metrics
+        updateMetrics(result.data);
+
+        // Generate plots
+        generatePlots(result.data);
+
+        // Show visualization area
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('visualizationArea').style.display = 'block';
+
+    } catch (error) {
+        console.error('Failed to extract features:', error);
+        alert('Failed to extract features: ' + error.message);
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'block';
+    }
+}
+
+// Update metrics display
+function updateMetrics(data) {
+    const classLabels = Object.keys(data.class_counts);
+    const classCounts = Object.values(data.class_counts);
+
+    document.getElementById('metricSamples').innerHTML =
+        `${data.n_samples} total<br><small>Class ${classLabels[0]}: ${classCounts[0]} | Class ${classLabels[1]}: ${classCounts[1]}</small>`;
+
+    if (data.metrics) {
+        const silhouette = data.metrics.silhouette_score.toFixed(3);
+        const interpretation = data.metrics.interpretation;
+        const badgeClass = interpretation === 'Good' ? 'success' : interpretation === 'Fair' ? 'warning' : 'danger';
+
+        document.getElementById('metricSilhouette').textContent = silhouette;
+        document.getElementById('metricInterpretation').innerHTML =
+            `<span class="badge bg-${badgeClass}">${interpretation}</span>`;
+
+        if (data.metrics.separation_quality) {
+            const sepQuality = data.metrics.separation_quality;
+            const sepRatio = data.metrics.separation_ratio.toFixed(2);
+            const sepBadgeClass = sepQuality === 'Excellent' ? 'success' : sepQuality === 'Good' ? 'info' : sepQuality === 'Fair' ? 'warning' : 'danger';
+
+            document.getElementById('metricSeparation').innerHTML =
+                `<span class="badge bg-${sepBadgeClass}">${sepQuality}</span>`;
+            document.getElementById('metricSeparationRatio').textContent = `Ratio: ${sepRatio}`;
+        }
+    }
+}
+
+// Generate Plotly visualizations
+function generatePlots(data) {
+    const classLabels = Object.keys(data.class_counts);
+
+    // PCA 1-2
+    if (data.pca) {
+        const traces = createScatterTraces(data.pca.coords_1_2, data.pca.labels, classLabels);
+        const layout = {
+            title: 'PCA Dimensions 1-2',
+            xaxis: { title: 'PC1' },
+            yaxis: { title: 'PC2' },
+            showlegend: true,
+            height: 500
+        };
+        Plotly.newPlot('plotPCA', traces, layout);
+
+        const variance12 = ((data.pca.explained_variance[0] + data.pca.explained_variance[1]) * 100).toFixed(1);
+        document.getElementById('pcaVariance12').textContent = `${variance12}%`;
+    }
+
+    // PCA 3-4
+    if (data.pca && data.pca.coords_3_4) {
+        const traces = createScatterTraces(data.pca.coords_3_4, data.pca.labels, classLabels);
+        const layout = {
+            title: 'PCA Dimensions 3-4',
+            xaxis: { title: 'PC3' },
+            yaxis: { title: 'PC4' },
+            showlegend: true,
+            height: 500
+        };
+        Plotly.newPlot('plotPCA34', traces, layout);
+
+        const variance34 = ((data.pca.explained_variance[2] + data.pca.explained_variance[3]) * 100).toFixed(1);
+        document.getElementById('pcaVariance34').textContent = `${variance34}%`;
+    }
+
+    // t-SNE
+    if (data.tsne) {
+        const traces = createScatterTraces(data.tsne.coords, data.tsne.labels, classLabels);
+        const layout = {
+            title: 't-SNE',
+            xaxis: { title: 'Dimension 1' },
+            yaxis: { title: 'Dimension 2' },
+            showlegend: true,
+            height: 500
+        };
+        Plotly.newPlot('plotTSNE', traces, layout);
+    }
+
+    // UMAP (if available)
+    if (data.umap) {
+        const traces = createScatterTraces(data.umap.coords, data.umap.labels, classLabels);
+        const layout = {
+            title: 'UMAP',
+            xaxis: { title: 'Dimension 1' },
+            yaxis: { title: 'Dimension 2' },
+            showlegend: true,
+            height: 500
+        };
+        Plotly.newPlot('plotUMAP', traces, layout);
+        document.getElementById('umapTabItem').style.display = 'block';
+    } else {
+        document.getElementById('umapTabItem').style.display = 'none';
+    }
+}
+
+// Create scatter plot traces for each class
+function createScatterTraces(coords, labels, classLabels) {
+    const colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'];
+    const traces = [];
+
+    classLabels.forEach((classLabel, idx) => {
+        const indices = labels.map((l, i) => l == classLabel ? i : -1).filter(i => i >= 0);
+        const x = indices.map(i => coords[i][0]);
+        const y = indices.map(i => coords[i][1]);
+
+        traces.push({
+            x: x,
+            y: y,
+            mode: 'markers',
+            type: 'scatter',
+            name: `Class ${classLabel}`,
+            marker: {
+                color: colors[idx % colors.length],
+                size: 6,
+                opacity: 0.6
+            }
+        });
+    });
+
+    return traces;
+}
+
+// Approve QC
+document.getElementById('btnApprove').addEventListener('click', async () => {
+    if (!selectedSessionId) return;
+
+    const notes = document.getElementById('qcNotes').value;
+
+    if (!confirm(`Approve this recording for processing?`)) return;
+
+    try {
+        const response = await fetch(`/api/qc/approve/${selectedSessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert('Recording approved! It will be processed automatically.');
+            clearSelection();
+            loadPendingRecordings();
+        } else {
+            alert('Failed to approve: ' + result.error);
+        }
+    } catch (error) {
+        alert('Error approving: ' + error.message);
+    }
+});
+
+// Reject QC
+document.getElementById('btnReject').addEventListener('click', async () => {
+    if (!selectedSessionId) return;
+
+    const notes = document.getElementById('qcNotes').value;
+
+    if (!notes.trim()) {
+        alert('Please provide a reason for rejection in the notes field');
+        return;
+    }
+
+    if (!confirm(`Reject this recording? It will NOT be processed.\n\nReason: ${notes}`)) return;
+
+    try {
+        const response = await fetch(`/api/qc/reject/${selectedSessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert('Recording rejected.');
+            clearSelection();
+            loadPendingRecordings();
+        } else {
+            alert('Failed to reject: ' + result.error);
+        }
+    } catch (error) {
+        alert('Error rejecting: ' + error.message);
+    }
+});
+
+// Clear selection
+document.getElementById('btnClear').addEventListener('click', clearSelection);
+
+function clearSelection() {
+    selectedSessionId = null;
+    currentData = null;
+    document.getElementById('visualizationArea').style.display = 'none';
+    document.getElementById('recordingInfo').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('qcNotes').value = '';
+
+    document.querySelectorAll('#recordingsList .list-group-item').forEach(item => {
+        item.classList.remove('active');
+    });
+}
+
+// Initial load
+loadPendingRecordings();
+
+// Auto-refresh every 2 minutes
+setInterval(loadPendingRecordings, 120000);
+</script>
+{% endblock %}

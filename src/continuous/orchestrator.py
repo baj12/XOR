@@ -52,6 +52,8 @@ from .continuous_ingestion import ContinuousIngestionPipeline
 from .incremental_trainer import IncrementalTrainer
 from .monitoring_reporter import SystemMonitor, WeeklyReport
 from .feature_database import FeatureDatabase
+from .rubix44_data_provider import Rubix44DataProvider
+from .stereo_channel_processor import StereoChannelProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +224,8 @@ class ContinuousLearningOrchestrator:
                  db_path: Path,
                  model_dir: Path,
                  report_dir: Path,
-                 data_dir: Optional[Path] = None):
+                 data_dir: Optional[Path] = None,
+                 web_integration: bool = True):
         """
         Initialize orchestrator.
 
@@ -232,12 +235,14 @@ class ContinuousLearningOrchestrator:
             model_dir: Directory for saving models
             report_dir: Directory for saving reports
             data_dir: Optional directory to monitor for new WAV files
+            web_integration: Enable MariaDB web interface integration (default: True)
         """
         self.config = config
         self.db_path = Path(db_path)
         self.model_dir = Path(model_dir)
         self.report_dir = Path(report_dir)
         self.data_dir = Path(data_dir) if data_dir else None
+        self.web_integration = web_integration
 
         # Create directories
         self.model_dir.mkdir(parents=True, exist_ok=True)
@@ -245,10 +250,67 @@ class ContinuousLearningOrchestrator:
 
         # Initialize components
         self.db = FeatureDatabase(self.db_path)
-        self.ingestion = ContinuousIngestionPipeline(config, self.db_path) if data_dir else None
         self.trainer = IncrementalTrainer(config, self.db_path, self.model_dir)
         self.monitor = SystemMonitor(self.db_path)
         self.email = EmailReporter(config)
+
+        # Initialize web integration if enabled
+        self.web_db = None
+        self.experiment_id = None
+        if self.web_integration:
+            try:
+                import sys
+                from pathlib import Path as P
+                sys.path.insert(0, str(P(__file__).parent.parent))
+                from db_connection import DatabaseConnection
+                self.web_db = DatabaseConnection(backend='mariadb')
+                logger.info("Web interface integration enabled (MariaDB)")
+            except Exception as e:
+                logger.warning(f"Could not enable web integration: {e}")
+                self.web_integration = False
+
+        # Initialize data provider based on configuration
+        self.data_provider_type = getattr(config.orchestration, 'data_provider', 'local')
+        self.data_provider = None
+
+        if self.data_provider_type == 'rubix44':
+            # Use rubix44 API polling
+            rubix_config = getattr(config.orchestration, 'rubix44', None)
+            if rubix_config:
+                api_url = getattr(rubix_config, 'api_url', 'http://10.0.0.58:5000')
+                download_dir = Path(getattr(rubix_config, 'download_dir', 'data/continuous/recordings'))
+                poll_interval = getattr(rubix_config, 'poll_interval_minutes', 5)
+                prefix_filter = getattr(rubix_config, 'output_prefix_filter', None)
+                cleanup = getattr(rubix_config, 'cleanup_after_processing', False)
+                # New v1.1.0 enhanced parameters
+                validate_device = getattr(rubix_config, 'validate_device_on_startup', True)
+                min_duration = getattr(rubix_config, 'min_recording_duration_sec', 60.0)
+
+                # Create stereo processor
+                processor = StereoChannelProcessor(config)
+
+                self.data_provider = Rubix44DataProvider(
+                    api_url=api_url,
+                    download_dir=download_dir,
+                    processor=processor,
+                    database=self.db,
+                    output_prefix_filter=prefix_filter,
+                    cleanup_after_processing=cleanup,
+                    validate_device_on_startup=validate_device,
+                    min_recording_duration_sec=min_duration
+                )
+                self.check_interval_minutes = poll_interval
+                logger.info(f"Using Rubix44 data provider: {api_url}")
+            else:
+                logger.error("Rubix44 provider selected but no rubix44 config found")
+                self.data_provider_type = 'local'
+
+        if self.data_provider_type == 'local':
+            # Use local directory watching (original behavior)
+            self.ingestion = ContinuousIngestionPipeline(config, self.db_path) if data_dir else None
+            local_config = getattr(config.orchestration, 'local', config.orchestration)
+            self.check_interval_minutes = getattr(local_config, 'data_check_interval_minutes', 60)
+            logger.info(f"Using local directory data provider: {self.data_dir}")
 
         # State tracking
         self.last_training_time = None
@@ -258,7 +320,6 @@ class ContinuousLearningOrchestrator:
         self.max_consecutive_errors = 10
 
         # Get configuration
-        self.check_interval_minutes = getattr(config.orchestration, 'data_check_interval_minutes', 60)
         self.training_day_of_week = getattr(config.orchestration, 'training_day_of_week', 0)  # Monday
         self.training_hour = getattr(config.orchestration, 'training_hour', 2)  # 2 AM
         self.min_samples_for_training = getattr(config.orchestration, 'min_samples_for_training', 1000)
@@ -267,6 +328,7 @@ class ContinuousLearningOrchestrator:
         self.performance_threshold = getattr(config.orchestration, 'performance_drop_threshold', 0.05)
 
         logger.info("ContinuousLearningOrchestrator initialized")
+        logger.info(f"Data provider: {self.data_provider_type}")
         logger.info(f"Database: {self.db_path}")
         logger.info(f"Model directory: {self.model_dir}")
         logger.info(f"Report directory: {self.report_dir}")
@@ -281,34 +343,56 @@ class ContinuousLearningOrchestrator:
         Returns:
             Dict with ingestion results
         """
-        if not self.ingestion or not self.data_dir:
-            return {'status': 'skipped', 'reason': 'no_data_directory'}
-
         logger.info("Checking for new data...")
 
         try:
-            # Find new WAV files
-            wav_files = sorted(self.data_dir.glob('*.wav'))
+            if self.data_provider_type == 'rubix44' and self.data_provider:
+                # Poll rubix44 API for new recordings
+                processed_count = self.data_provider.poll_for_new_recordings()
 
-            if not wav_files:
-                logger.info("No new data files found")
-                return {'status': 'no_data', 'files_found': 0}
+                if processed_count > 0:
+                    return {
+                        'status': 'success',
+                        'provider': 'rubix44',
+                        'recordings_processed': processed_count
+                    }
+                else:
+                    return {
+                        'status': 'no_data',
+                        'provider': 'rubix44',
+                        'recordings_processed': 0
+                    }
 
-            # Ingest files
-            results = self.ingestion.ingest_batch(wav_files)
+            elif self.data_provider_type == 'local':
+                # Use local directory ingestion (original behavior)
+                if not self.ingestion or not self.data_dir:
+                    return {'status': 'skipped', 'reason': 'no_data_directory'}
 
-            # Count successes
-            n_success = sum(1 for r in results if r['status'] == 'success')
-            n_failed = len(results) - n_success
+                # Find new WAV files
+                wav_files = sorted(self.data_dir.glob('*.wav'))
 
-            logger.info(f"Ingestion complete: {n_success} succeeded, {n_failed} failed")
+                if not wav_files:
+                    logger.info("No new data files found")
+                    return {'status': 'no_data', 'files_found': 0}
 
-            return {
-                'status': 'success',
-                'files_processed': len(results),
-                'files_succeeded': n_success,
-                'files_failed': n_failed
-            }
+                # Ingest files
+                results = self.ingestion.ingest_batch(wav_files)
+
+                # Count successes
+                n_success = sum(1 for r in results if r['status'] == 'success')
+                n_failed = len(results) - n_success
+
+                logger.info(f"Ingestion complete: {n_success} succeeded, {n_failed} failed")
+
+                return {
+                    'status': 'success',
+                    'provider': 'local',
+                    'files_processed': len(results),
+                    'files_succeeded': n_success,
+                    'files_failed': n_failed
+                }
+            else:
+                return {'status': 'error', 'reason': 'unknown_provider_type'}
 
         except Exception as e:
             logger.error(f"Data ingestion failed: {e}", exc_info=True)
@@ -472,7 +556,7 @@ class ContinuousLearningOrchestrator:
             logger.info(f"=== Orchestration Cycle: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
 
             # 1. Check and ingest new data
-            if self.data_dir:
+            if self.data_dir or self.data_provider:
                 ingestion_result = self.check_and_ingest_data()
                 logger.info(f"Ingestion: {ingestion_result}")
 
@@ -490,6 +574,9 @@ class ContinuousLearningOrchestrator:
             if now.weekday() == 0 and now.hour == 8:  # Monday 8 AM
                 if not self.last_report_time or (now - self.last_report_time) > timedelta(days=6):
                     self.generate_weekly_report()
+
+            # 5. Update web interface
+            self._update_web_interface(status='running')
 
             # Reset error count on success
             self.error_count = 0
@@ -511,6 +598,104 @@ class ContinuousLearningOrchestrator:
                 logger.critical(f"Too many consecutive errors ({self.error_count}), stopping orchestrator")
                 self.is_running = False
 
+    def _register_with_web_interface(self, test_duration_hours: Optional[int] = None) -> None:
+        """Register this orchestrator run with the web interface (MariaDB)"""
+        if not self.web_integration or not self.web_db:
+            return
+
+        try:
+            import os
+            import hashlib
+
+            # Generate experiment ID
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.experiment_id = f"orchestrator_{timestamp}"
+
+            # Calculate end time
+            start_time = datetime.now()
+            if test_duration_hours:
+                end_time = start_time + timedelta(hours=test_duration_hours)
+                duration_weeks = test_duration_hours / (24 * 7)
+            else:
+                end_time = None
+                duration_weeks = 52  # Assume 1 year if indefinite
+
+            # Get current PID
+            pid = os.getpid()
+
+            with self.web_db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO continuous_experiments (
+                        experiment_id, experiment_name, description,
+                        start_time, end_time, target_duration_weeks,
+                        recording_interval_minutes, playback_file, output_prefix,
+                        recording_duration_seconds,
+                        channel_1_substance, channel_2_substance,
+                        beaker_1_role, beaker_1_content,
+                        beaker_2_role, beaker_2_content,
+                        faraday_cage_used, researcher_name,
+                        auto_qc_enabled,
+                        training_sliding_window_weeks, training_batch_size,
+                        training_epochs_per_cycle, training_learning_rate,
+                        status, orchestrator_pid, current_cycle,
+                        created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                    )
+                """, (
+                    self.experiment_id,
+                    f"Orchestrator Run {timestamp}",
+                    f"Autonomous orchestrator ({self.data_provider_type} provider)",
+                    start_time, end_time, duration_weeks,
+                    self.check_interval_minutes, 'orchestrator', self.experiment_id,
+                    180,  # Default recording duration
+                    'unknown', 'unknown', 'negative', 'unknown',
+                    'negative', 'unknown',
+                    0, 'Orchestrator', 0,
+                    self.config.orchestration.training_window_weeks,
+                    self.config.model.batch_size,
+                    self.config.ga.epochs,
+                    self.config.model.lr,
+                    'running', pid, 0
+                ))
+                conn.commit()
+
+            logger.info(f"Registered with web interface: {self.experiment_id}")
+
+        except Exception as e:
+            logger.warning(f"Could not register with web interface: {e}")
+
+    def _update_web_interface(self, **kwargs) -> None:
+        """Update experiment status in web interface"""
+        if not self.web_integration or not self.web_db or not self.experiment_id:
+            return
+
+        try:
+            # Get current sample count from database
+            stats = self.db.get_database_stats()
+
+            with self.web_db.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Build update query dynamically
+                updates = ['updated_at = NOW()', f"total_samples_collected = {stats['total_samples']}"]
+                for key, value in kwargs.items():
+                    if value is not None:
+                        if isinstance(value, str):
+                            updates.append(f"{key} = '{value}'")
+                        else:
+                            updates.append(f"{key} = {value}")
+
+                query = f"UPDATE continuous_experiments SET {', '.join(updates)} WHERE experiment_id = %s"
+                cursor.execute(query, (self.experiment_id,))
+                conn.commit()
+
+        except Exception as e:
+            logger.debug(f"Could not update web interface: {e}")
+
     def run(self, test_duration_hours: Optional[int] = None, dry_run: bool = False) -> None:
         """
         Run orchestrator indefinitely (or for test duration).
@@ -520,8 +705,14 @@ class ContinuousLearningOrchestrator:
             dry_run: If True, skip actual training and email sending
         """
         logger.info("Starting continuous learning orchestrator...")
-        logger.info(f"Test duration: {test_duration_hours} hours" if test_duration_hours else "Running indefinitely")
+        if test_duration_hours:
+            logger.info(f"Test duration: {test_duration_hours} hours")
+        else:
+            logger.info("Running indefinitely")
         logger.info(f"Dry run: {dry_run}")
+
+        # Register with web interface
+        self._register_with_web_interface(test_duration_hours)
 
         self.is_running = True
         start_time = datetime.now()
@@ -549,10 +740,16 @@ class ContinuousLearningOrchestrator:
 
         logger.info("Orchestrator stopped")
 
+        # Update web interface on completion
+        self._update_web_interface(status='completed', completed_at='NOW()')
+
     def stop(self) -> None:
         """Stop the orchestrator gracefully"""
         logger.info("Stopping orchestrator...")
         self.is_running = False
+
+        # Update web interface
+        self._update_web_interface(status='stopped', orchestrator_pid='NULL')
 
 
 def main():

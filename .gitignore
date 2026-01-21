@@ -55,3 +55,22 @@ experiments/*
 experiment_progress.txt
 experiment_runner.sh.txt
 failed_experiments.txt
+
+# TeX Live installer
+install-tl-*/
+
+# Test databases and temporary files
+*.db
+test_*.py
+!tests/test_*.py
+parallel_joblog.txt
+monitor_test_status.sh
+*.csv
+xor_analysis*.csv
+all.sources.txt
+
+# QC reports (generated data)
+qc_reports/
+
+# IDE/editor configs
+.roocode/

@@ -358,23 +358,89 @@ The `src/continuous/` module provides autonomous 24/7 audio classification from 
 - **Email Alerts**: Performance drops, drift, storage issues
 - **Weekly Reports**: Comprehensive performance summaries
 - **Autonomous Operation**: Runs indefinitely with scheduled training
+- **Rubix44 Integration**: Automatic polling and processing of recordings from rubix44-recorder API
 
-### Quick Start
+### Data Providers
 
+The system supports two data ingestion methods:
+
+#### 1. Rubix44 API Provider (Recommended for Production)
+
+Polls the [rubix44-recorder](https://github.com/baj12/rubix44-recorder) API for new stereo recordings and automatically processes them.
+
+**Configuration** (config/continuous_learning_config.yaml):
+```yaml
+orchestration:
+  data_provider: rubix44  # Use rubix44 API
+
+  rubix44:
+    api_url: http://10.0.0.58:5000  # URL of rubix44-recorder API
+    poll_interval_minutes: 5  # Check every 5 minutes
+    download_dir: data/continuous/recordings  # Local download directory
+    output_prefix_filter: null  # Filter by prefix (null = all files)
+    cleanup_after_processing: false  # Keep or delete WAV files after processing
+```
+
+**Quick Start**:
 ```bash
-# Activate environment
-source /Users/bernd/miniconda3/bin/activate xorProject
+# Test API connection and process available recordings
+python scripts/test_rubix44_provider.py \
+    --config config/continuous_learning_config.yaml
 
-# Run tests to verify installation
-python -m pytest tests/test_continuous_learning.py -v
+# Run continuous learning with rubix44 provider
+python -m src.continuous.orchestrator \
+    --config config/continuous_learning_config.yaml \
+    --db data/continuous/features.db \
+    --model-dir models/continuous \
+    --report-dir reports/continuous
+```
 
-# Run orchestrator (24/7 mode)
+**Architecture**:
+```
+rubix44-recorder API (10.0.0.58:5000)
+       ↓ (poll every 5 min)
+Rubix44DataProvider
+       ↓ (download stereo WAV)
+Local Download Directory
+       ↓ (process channels)
+StereoChannelProcessor
+       ↓ (extract features)
+FeatureDatabase
+       ↓
+Continuous Learning Pipeline
+```
+
+**Features**:
+- Automatic discovery of new recordings
+- State tracking to avoid reprocessing
+- Health monitoring and error recovery
+- Optional file cleanup after processing
+- Prefix-based filtering for selective processing
+
+#### 2. Local Directory Provider (Development/Testing)
+
+Monitors a local directory for new WAV files (original behavior).
+
+**Configuration**:
+```yaml
+orchestration:
+  data_provider: local  # Use local directory watching
+
+  local:
+    audio_source_dir: /path/to/wav/files  # Or use --data-dir flag
+    min_duration_sec: 60.0  # Minimum file duration
+    max_files_per_day: 100  # Safety limit
+    data_check_interval_minutes: 60  # Check every hour
+```
+
+**Quick Start**:
+```bash
 python -m src.continuous.orchestrator \
     --config config/continuous_learning_config.yaml \
     --db data/continuous/features.db \
     --model-dir models/continuous \
     --report-dir reports/continuous \
-    --log INFO
+    --data-dir /path/to/wav/files
 ```
 
 ### Module Structure
@@ -382,20 +448,40 @@ python -m src.continuous.orchestrator \
 ```text
 src/continuous/
 ├── stereo_channel_processor.py    # WAV → Features per channel
-├── feature_database.py             # SQLite storage with full schema
-├── continuous_ingestion.py         # Data ingestion pipeline
+├── rubix44_data_provider.py       # Rubix44 API integration
+├── feature_database.py             # SQLite/MariaDB storage
+├── continuous_ingestion.py         # Local directory ingestion
 ├── incremental_trainer.py          # Sliding window training
 ├── monitoring_reporter.py          # Health monitoring & reports
 └── orchestrator.py                 # 24/7 autonomous coordinator
 ```
 
+### Testing
+
+```bash
+# Activate environment
+source /Users/bernd/miniconda3/bin/activate xorProject
+
+# Run all continuous learning tests
+python -m pytest tests/test_continuous_learning.py -v
+
+# Test rubix44 provider
+python -m pytest tests/test_rubix44_provider.py -v
+
+# Test rubix44 API connection only
+python scripts/test_rubix44_provider.py \
+    --config config/continuous_learning_config.yaml \
+    --api-only
+```
+
 ### Status
 
-- ✅ **All 30 tests passing** (2min 37sec runtime)
-- ✅ Core functionality complete and tested
-- ⚠️ Configuration management needs setup (see [Status doc](docs/CONTINUOUS_LEARNING_STATUS.md))
+- ✅ **All core tests passing** (30+ tests)
+- ✅ Rubix44 API integration complete
+- ✅ Dual data provider support (rubix44 + local)
+- ✅ State tracking and error recovery
 - ⚠️ Email configuration required for alerts
-- ❌ Visualization generation not yet implemented
+- ⚠️ Visualization generation not yet implemented
 
 For detailed status, gaps, and next steps, see **[CONTINUOUS_LEARNING_STATUS.md](docs/CONTINUOUS_LEARNING_STATUS.md)**.
 
@@ -433,3 +519,99 @@ When naming modules, ask yourself: "If someone saw just the filename, would they
 3. **Avoid abbreviations unless standard**: `mfcc`, `pca`, `roc` are OK; `comp`, `viz`, `proc` are not
 4. **Group related functionality**: All embedding-related plots in one module
 5. **Test coverage**: Every visualization function has a corresponding test
+
+## Database Backends
+
+The project supports both **SQLite** (local/development) and **MariaDB** (production) for storing experimental results and continuous learning features.
+
+### Database Selection
+
+- **SQLite**: Default for local development, single-user scenarios, and testing
+  - File-based (no server required)
+  - Perfect for dev/test workflows
+  - Used for continuous learning when running locally
+
+- **MariaDB**: Production backend for multi-user access and large-scale deployments
+  - Networked database at 10.0.0.103
+  - Connection pooling for performance
+  - Better concurrency and scalability
+  - Recommended for continuous learning in production
+
+### Configuration
+
+Database credentials are stored in `../.env`:
+
+```bash
+MARIADB_HOST=10.0.0.103
+MARIADBUSER=devuser
+MARIADBDEVPWD=<password>
+MARIADB_DATABASE=xor_project
+```
+
+### Using MariaDB
+
+**Initialize the database** (one-time setup):
+
+```bash
+python scripts/init_mariadb.py
+```
+
+This creates the `xor_project` database and all required tables.
+
+**Use in code**:
+
+```python
+from continuous.feature_database import FeatureDatabase
+
+# SQLite (default)
+db = FeatureDatabase(db_path='features.db', backend='sqlite')
+
+# MariaDB (production)
+db = FeatureDatabase(backend='mariadb')
+```
+
+**Database schema**: See [docs/MARIADB_SCHEMA.md](docs/MARIADB_SCHEMA.md) for complete schema documentation.
+
+**Connection utility**: [src/db_connection.py](src/db_connection.py) provides unified interface:
+
+```python
+from db_connection import DatabaseConnection
+
+# Get connection with context manager
+db = DatabaseConnection(backend='mariadb')
+with db.get_connection() as conn:
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM features LIMIT 10")
+    results = cursor.fetchall()
+```
+
+### Database Tables
+
+**Continuous Learning Tables:**
+- `features`: Transformed audio features (compressed numpy arrays)
+- `training_runs`: Model training metadata and performance
+- `validation_metrics`: Detailed validation results
+- `drift_metrics`: Feature distribution drift tracking
+
+**Experimental Results Tables:**
+- `experiments`: Experiment metadata and status
+- `ga_runs`: Genetic algorithm execution data
+- `ga_individuals`: Individual solutions evaluated
+- `model_results`: Final model performance
+- `resource_usage`: CPU/memory/GPU tracking
+
+### Migration from SQLite
+
+To migrate existing SQLite data to MariaDB, use the migration script (when needed):
+
+```bash
+python scripts/migrate_sqlite_to_mariadb.py --sqlite-path data/features.db
+```
+
+### Backend Compatibility
+
+The `FeatureDatabase` class automatically handles SQL dialect differences:
+- Uses `?` placeholders for SQLite
+- Uses `%s` placeholders for MariaDB
+- Handles `AUTOINCREMENT` vs `AUTO_INCREMENT`
+- Connection pooling enabled for MariaDB only

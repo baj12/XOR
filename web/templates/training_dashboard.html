@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Training Dashboard - Recording Management System{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1><i class="bi bi-graph-up"></i> Training Dashboard</h1>
+            <p class="text-muted">Model training history and performance metrics</p>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="card-body">
+                    <div class="metric-label">Total Models</div>
+                    <div class="metric-value" id="totalModels">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="card-body">
+                    <div class="metric-label">Best Accuracy</div>
+                    <div class="metric-value" id="bestAccuracy">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="card-body">
+                    <div class="metric-label">Active Experiments</div>
+                    <div class="metric-value" id="activeExperiments">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card metric-card">
+                <div class="card-body">
+                    <div class="metric-label">Avg Training Time</div>
+                    <div class="metric-value" id="avgTrainingTime">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Training History -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Recent Training Runs</span>
+                    <button class="btn btn-sm btn-primary" onclick="refreshTrainingData()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        Training history is integrated with the <strong>Continuous Learning</strong> system.
+                        <br>
+                        Visit the <a href="/continuous" class="alert-link">Continuous Learning Dashboard</a> to view detailed training metrics and model performance.
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="trainingTable">
+                            <thead>
+                                <tr>
+                                    <th>Experiment ID</th>
+                                    <th>Cycle</th>
+                                    <th>Status</th>
+                                    <th>Accuracy</th>
+                                    <th>Training Time</th>
+                                    <th>Completed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">
+                                        Loading training data...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function refreshTrainingData() {
+        // Fetch continuous experiments to show training data
+        fetch('/api/continuous/experiments')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayTrainingSummary(data.experiments || []);
+                    loadTrainingHistory();
+                } else {
+                    showError('trainingTable', 'Failed to load training data');
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching training data:', error);
+                document.getElementById('trainingTable').querySelector('tbody').innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-danger">
+                            Error loading training data
+                        </td>
+                    </tr>
+                `;
+            });
+    }
+
+    function displayTrainingSummary(experiments) {
+        // Calculate summary metrics
+        let totalModels = 0;
+        let bestAccuracy = 0;
+        let activeCount = 0;
+        let totalTrainingTime = 0;
+        let trainingCount = 0;
+
+        experiments.forEach(exp => {
+            totalModels += exp.current_cycle || 0;
+            if (exp.current_accuracy && exp.current_accuracy > bestAccuracy) {
+                bestAccuracy = exp.current_accuracy;
+            }
+            if (exp.status === 'running') {
+                activeCount++;
+            }
+        });
+
+        document.getElementById('totalModels').textContent = totalModels;
+        document.getElementById('bestAccuracy').textContent =
+            bestAccuracy > 0 ? (bestAccuracy * 100).toFixed(1) + '%' : 'N/A';
+        document.getElementById('activeExperiments').textContent = activeCount;
+        document.getElementById('avgTrainingTime').textContent = 'N/A';
+    }
+
+    function loadTrainingHistory() {
+        // Load recent training cycles from all experiments
+        fetch('/api/continuous/experiments?limit=10')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success || !data.experiments || data.experiments.length === 0) {
+                    document.getElementById('trainingTable').querySelector('tbody').innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">
+                                No training runs found. Create a continuous learning experiment to begin training.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                data.experiments.forEach(exp => {
+                    if (exp.current_cycle > 0) {
+                        const statusClass = exp.status === 'running' ? 'success' :
+                                          exp.status === 'completed' ? 'info' : 'secondary';
+                        const accuracy = exp.current_accuracy ?
+                            (exp.current_accuracy * 100).toFixed(1) + '%' : 'N/A';
+
+                        html += `
+                            <tr>
+                                <td><a href="/continuous">${exp.experiment_id}</a></td>
+                                <td>${exp.current_cycle} / ${exp.total_cycles_expected}</td>
+                                <td><span class="badge bg-${statusClass}">${exp.status}</span></td>
+                                <td>${accuracy}</td>
+                                <td>N/A</td>
+                                <td>${exp.start_time ? formatDateTime(exp.start_time) : 'N/A'}</td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                if (html === '') {
+                    html = `
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">
+                                No completed training cycles yet
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                document.getElementById('trainingTable').querySelector('tbody').innerHTML = html;
+            });
+    }
+
+    // Load initial data
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshTrainingData();
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshTrainingData, 30000);
+    });
+</script>
+{% endblock %}

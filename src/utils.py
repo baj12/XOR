@@ -95,9 +95,35 @@ class AudioConfig:
 
 
 @dataclass
+class Rubix44Config:
+    """Configuration for Rubix44 API data provider"""
+    api_url: str = "http://10.0.0.58:5000"
+    poll_interval_minutes: int = 5
+    download_dir: str = "data/continuous/recordings"
+    output_prefix_filter: Optional[str] = None
+    cleanup_after_processing: bool = False
+    validate_device_on_startup: bool = True
+    min_recording_duration_sec: int = 60
+
+
+@dataclass
+class LocalProviderConfig:
+    """Configuration for local directory data provider"""
+    audio_source_dir: Optional[str] = None
+    min_duration_sec: float = 60.0
+    max_files_per_day: int = 100
+    data_check_interval_minutes: int = 60
+
+
+@dataclass
 class OrchestrationConfig:
     """Configuration for continuous learning orchestration"""
-    # Data ingestion
+    # Data provider selection
+    data_provider: str = 'rubix44'  # 'rubix44' or 'local'
+    rubix44: Optional[Rubix44Config] = None
+    local: Optional[LocalProviderConfig] = None
+
+    # Legacy fields for backward compatibility
     data_check_interval_minutes: int = 60
     audio_source_dir: Optional[str] = None
     min_duration_sec: float = 60.0
@@ -142,9 +168,16 @@ class OrchestrationConfig:
     visualizations_dir: str = 'visualizations/continuous'
 
     def __post_init__(self):
-        """Initialize mutable defaults"""
+        """Initialize mutable defaults and nested configs"""
         if self.email_recipients is None:
             self.email_recipients = []
+
+        # Initialize nested configs if they're dicts
+        if self.rubix44 is not None and isinstance(self.rubix44, dict):
+            self.rubix44 = Rubix44Config(**self.rubix44)
+
+        if self.local is not None and isinstance(self.local, dict):
+            self.local = LocalProviderConfig(**self.local)
 
 
 @dataclass
@@ -167,7 +200,8 @@ class Config:
 class ExperimentPaths:
     def __init__(self, config_name: str):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_dir = os.path.expanduser(f"~/Library/CloudStorage/GoogleDrive-bernd.jagla@gmail.com/My Drive/Mora/XOR/experiments/{config_name}_{timestamp}")
+        # Use /Volumes/CIH/ for experiment storage
+        base_dir = f"/Volumes/CIH/mora/xor/experiments/{config_name}_{timestamp}"
 
         # Create attribute for each path
         self.base_dir = base_dir

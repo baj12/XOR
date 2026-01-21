@@ -82,11 +82,27 @@ metrics:
 
 # Orchestration configuration (for continuous learning)
 orchestration:
-  # Data ingestion
-  data_check_interval_minutes: 60  # Check for new data every hour
-  audio_source_dir: null  # Set to path where new WAV files arrive, or use --data-dir
-  min_duration_sec: 60.0  # Minimum 1 minute of audio required
-  max_files_per_day: 100  # Safety limit
+  # Data ingestion - choose provider type
+  data_provider: rubix44  # Options: 'rubix44' (API polling) or 'local' (directory watching)
+
+  # Rubix44 API data provider settings
+  rubix44:
+    api_url: http://10.0.0.58:5000  # URL of rubix44-recorder API
+    poll_interval_minutes: 5  # Check for new recordings every 5 minutes
+    download_dir: data/continuous/recordings  # Local download directory
+    output_prefix_filter: null  # Only process files with this prefix (null = all files)
+    cleanup_after_processing: false  # Delete WAV files after successful feature extraction
+
+    # Enhanced validation (v1.1.0 API features)
+    validate_device_on_startup: true  # Check Rubix44 is connected at startup
+    min_recording_duration_sec: 60  # Reject recordings shorter than 60 seconds
+
+  # Local directory data provider settings (alternative to rubix44)
+  local:
+    audio_source_dir: null  # Set to path where new WAV files arrive, or use --data-dir
+    min_duration_sec: 60.0  # Minimum 1 minute of audio required
+    max_files_per_day: 100  # Safety limit
+    data_check_interval_minutes: 60  # Check for new data every hour
 
   # Training schedule
   training_day_of_week: 0  # 0=Monday, 1=Tuesday, ..., 6=Sunday
