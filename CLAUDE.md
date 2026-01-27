@@ -359,6 +359,28 @@ The `src/continuous/` module provides autonomous 24/7 audio classification from 
 - **Weekly Reports**: Comprehensive performance summaries
 - **Autonomous Operation**: Runs indefinitely with scheduled training
 - **Rubix44 Integration**: Automatic polling and processing of recordings from rubix44-recorder API
+- **Control Experiment Mode**: Support for experiments expecting no class separation (see below)
+
+### Control Experiment Mode
+
+For control experiments where both channels contain the same substance (or you expect no detectable difference), enable **Control Experiment Mode**:
+
+- **Normal Mode**: QC passes when class separation score is high (>0.8), fails when low (<0.6)
+- **Control Mode**: QC passes when separation score ~0.5 (random/no separation), fails if unexpected separation detected
+
+**Enable via Web UI**: When creating an experiment, check "Control Experiment Mode" in Advanced Settings.
+
+**Enable via Database**:
+
+```sql
+UPDATE continuous_experiments SET expect_no_separation = 1 WHERE experiment_id = 'exp_xxx';
+```
+
+**Use Cases**:
+
+- Baseline/control experiments with identical substances in both channels
+- Testing recording equipment calibration
+- Validating that the system correctly identifies "no difference"
 
 ### Data Providers
 
