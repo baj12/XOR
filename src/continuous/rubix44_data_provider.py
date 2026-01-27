@@ -61,6 +61,102 @@ class Rubix44Client:
             logger.error(f"Health check failed: {e}")
             return False
 
+    def get_server_status(self) -> Dict:
+        """
+        Get detailed server status including cooldown information.
+
+        Returns:
+            Status dictionary with 'status', 'cooldown', and session info
+        """
+        try:
+            response = requests.get(f"{self.api_base}/status", timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get server status: {e}")
+            return {'status': 'error', 'error': str(e)}
+
+    def get_cooldown_status(self) -> Dict:
+        """
+        Check if server is in post-recording cooldown period.
+
+        Returns:
+            Dictionary with:
+            - 'active': bool - True if server is in cooldown
+            - 'remaining_seconds': float - Seconds until cooldown ends (0 if not active)
+            - 'period_seconds': float - Total cooldown period configured
+        """
+        try:
+            status = self.get_server_status()
+            cooldown = status.get('cooldown', {})
+            return {
+                'active': cooldown.get('active', False),
+                'remaining_seconds': cooldown.get('remaining_seconds', 0),
+                'period_seconds': cooldown.get('period_seconds', 45)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get cooldown status: {e}")
+            return {'active': False, 'remaining_seconds': 0, 'period_seconds': 45}
+
+    def get_memory_status(self) -> Dict:
+        """
+        Get server memory usage information.
+
+        Returns:
+            Dictionary with process and system memory stats
+        """
+        try:
+            response = requests.get(f"{self.api_base}/system/memory", timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get memory status: {e}")
+            return {'error': str(e)}
+
+    def trigger_garbage_collection(self) -> Dict:
+        """
+        Trigger manual garbage collection on the server.
+
+        Returns:
+            Dictionary with GC results
+        """
+        try:
+            response = requests.post(f"{self.api_base}/system/gc", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to trigger GC: {e}")
+            return {'error': str(e)}
+
+    def wait_for_cooldown(self, timeout: float = 120) -> bool:
+        """
+        Wait for server cooldown to complete.
+
+        Args:
+            timeout: Maximum seconds to wait (default: 120)
+
+        Returns:
+            True if cooldown completed, False if timeout reached
+        """
+        import time
+        start_time = time.time()
+
+        while (time.time() - start_time) < timeout:
+            cooldown = self.get_cooldown_status()
+            if not cooldown['active']:
+                logger.debug("Server cooldown completed")
+                return True
+
+            remaining = cooldown['remaining_seconds']
+            logger.info(f"Waiting for cooldown: {remaining:.1f}s remaining")
+            # Wait for remaining time plus small buffer, but not more than timeout
+            wait_time = min(remaining + 1, timeout - (time.time() - start_time))
+            if wait_time > 0:
+                time.sleep(wait_time)
+
+        logger.warning(f"Cooldown wait timeout after {timeout}s")
+        return False
+
     def get_config(self) -> Dict:
         """
         Get current recorder configuration.

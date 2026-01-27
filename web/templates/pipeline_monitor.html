@@ -66,12 +66,15 @@
 
 {% block extra_js %}
 <script>
+    let activityDataTable = null;
+
     function refreshStatus() {
         fetch('/api/pipeline/status')
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
                     displayPipelineStatus(data.statuses || []);
+                    updateActivityTable(data.statuses || []);
                 } else {
                     showError('pipelineStatus', 'Failed to load pipeline status');
                 }
@@ -124,6 +127,57 @@
 
         html += '</div>';
         container.innerHTML = html;
+    }
+
+    function updateActivityTable(statuses) {
+        // Destroy existing DataTable if it exists
+        if (activityDataTable) {
+            activityDataTable.destroy();
+            activityDataTable = null;
+        }
+
+        const tbody = document.getElementById('activityTable').querySelector('tbody');
+
+        if (statuses.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center text-muted">
+                        No recent activity
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        statuses.forEach(status => {
+            const statusClass = status.status === 'running' ? 'success' :
+                              status.status === 'idle' ? 'secondary' : 'danger';
+
+            html += `
+                <tr>
+                    <td data-order="${status.timestamp || ''}">${status.timestamp ? formatDateTime(status.timestamp) : 'N/A'}</td>
+                    <td>${status.component}</td>
+                    <td><span class="badge bg-${statusClass}">${status.status}</span></td>
+                    <td>${status.message || 'No message'}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
+
+        // Initialize DataTables
+        activityDataTable = $('#activityTable').DataTable({
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+            order: [[0, 'desc']], // Sort by timestamp descending
+            language: {
+                search: "Search activity:",
+                info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                infoEmpty: "No activity",
+                paginate: { previous: "Previous", next: "Next" }
+            }
+        });
     }
 
     // Load initial status

@@ -214,7 +214,7 @@ async function loadRecentRecordings() {
         const data = await response.json();
 
         if (data.success && data.recordings.length > 0) {
-            let html = '<div class="table-responsive"><table class="table table-hover mb-0"><thead><tr>';
+            let html = '<div class="table-responsive"><table class="table table-hover mb-0" id="recentRecordingsTable"><thead><tr>';
             html += '<th>Session ID</th><th>Date</th><th>Status</th><th>Actions</th>';
             html += '</tr></thead><tbody>';
 
@@ -227,7 +227,7 @@ async function loadRecentRecordings() {
                 html += `
                     <tr>
                         <td><small>${rec.session_id}</small></td>
-                        <td><small>${formatDateTime(rec.recording_date)}</small></td>
+                        <td data-order="${rec.recording_date}"><small>${formatDateTime(rec.recording_date)}</small></td>
                         <td>${status}</td>
                         <td>
                             <a href="/recordings/${rec.session_id}" class="btn btn-sm btn-outline-primary">View</a>
@@ -238,6 +238,23 @@ async function loadRecentRecordings() {
 
             html += '</tbody></table></div>';
             container.innerHTML = html;
+
+            // Initialize DataTables for recent recordings
+            $('#recentRecordingsTable').DataTable({
+                pageLength: 5,
+                lengthChange: false,
+                order: [[1, 'desc']],
+                columnDefs: [
+                    { orderable: false, targets: [3] }
+                ],
+                language: {
+                    search: "Filter:",
+                    info: "_TOTAL_ recordings",
+                    infoEmpty: "No recordings",
+                    paginate: { previous: "<", next: ">" }
+                },
+                dom: 'ftp' // filter, table, pagination (no length or info)
+            });
         } else {
             container.innerHTML = '<p class="text-muted text-center p-3">No recordings found</p>';
         }

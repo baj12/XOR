@@ -144,11 +144,19 @@
         document.getElementById('avgTrainingTime').textContent = 'N/A';
     }
 
+    let trainingDataTable = null;
+
     function loadTrainingHistory() {
         // Load recent training cycles from all experiments
         fetch('/api/continuous/experiments?limit=10')
             .then(response => response.json())
             .then(data => {
+                // Destroy existing DataTable if it exists
+                if (trainingDataTable) {
+                    trainingDataTable.destroy();
+                    trainingDataTable = null;
+                }
+
                 if (!data.success || !data.experiments || data.experiments.length === 0) {
                     document.getElementById('trainingTable').querySelector('tbody').innerHTML = `
                         <tr>
@@ -161,27 +169,30 @@
                 }
 
                 let html = '';
+                let hasData = false;
                 data.experiments.forEach(exp => {
                     if (exp.current_cycle > 0) {
+                        hasData = true;
                         const statusClass = exp.status === 'running' ? 'success' :
                                           exp.status === 'completed' ? 'info' : 'secondary';
                         const accuracy = exp.current_accuracy ?
                             (exp.current_accuracy * 100).toFixed(1) + '%' : 'N/A';
+                        const accuracySort = exp.current_accuracy || 0;
 
                         html += `
                             <tr>
                                 <td><a href="/continuous">${exp.experiment_id}</a></td>
-                                <td>${exp.current_cycle} / ${exp.total_cycles_expected}</td>
+                                <td data-order="${exp.current_cycle}">${exp.current_cycle} / ${exp.total_cycles_expected}</td>
                                 <td><span class="badge bg-${statusClass}">${exp.status}</span></td>
-                                <td>${accuracy}</td>
+                                <td data-order="${accuracySort}">${accuracy}</td>
                                 <td>N/A</td>
-                                <td>${exp.start_time ? formatDateTime(exp.start_time) : 'N/A'}</td>
+                                <td data-order="${exp.start_time || ''}">${exp.start_time ? formatDateTime(exp.start_time) : 'N/A'}</td>
                             </tr>
                         `;
                     }
                 });
 
-                if (html === '') {
+                if (!hasData) {
                     html = `
                         <tr>
                             <td colspan="6" class="text-center text-muted">
@@ -189,9 +200,24 @@
                             </td>
                         </tr>
                     `;
+                    document.getElementById('trainingTable').querySelector('tbody').innerHTML = html;
+                    return;
                 }
 
                 document.getElementById('trainingTable').querySelector('tbody').innerHTML = html;
+
+                // Initialize DataTables
+                trainingDataTable = $('#trainingTable').DataTable({
+                    pageLength: 10,
+                    lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+                    order: [[5, 'desc']], // Sort by completion date
+                    language: {
+                        search: "Search runs:",
+                        info: "Showing _START_ to _END_ of _TOTAL_ training runs",
+                        infoEmpty: "No training runs",
+                        paginate: { previous: "Previous", next: "Next" }
+                    }
+                });
             });
     }
 

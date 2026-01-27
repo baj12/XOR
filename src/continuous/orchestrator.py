@@ -72,10 +72,60 @@ class EmailReporter:
         self.smtp_server = getattr(config.orchestration, 'email_smtp_server', 'smtp.gmail.com')
         self.smtp_port = getattr(config.orchestration, 'email_smtp_port', 587)
         self.sender = getattr(config.orchestration, 'email_sender', 'noreply@example.com')
-        self.password = getattr(config.orchestration, 'email_password', None)
+        self.password = self._load_email_password(config)
         self.recipients = getattr(config.orchestration, 'email_recipients', [])
 
         logger.info(f"EmailReporter initialized: {len(self.recipients)} recipients")
+
+    @staticmethod
+    def _load_email_password(config) -> Optional[str]:
+        """
+        Load email password from ../.env file or config.
+
+        Priority:
+        1. ../.env file (EMAIL_PASSWORD key)
+        2. Config file (email_password field)
+        3. Environment variable EMAIL_PASSWORD
+
+        Returns:
+            Email password or None if not found
+        """
+        import os
+
+        # Try loading from ../.env file first (more secure than shell env)
+        env_file = Path(__file__).parent.parent.parent.parent / '.env'
+        if env_file.exists():
+            try:
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith('EMAIL_PASSWORD='):
+                            # Handle quoted values
+                            value = line.split('=', 1)[1].strip()
+                            if value.startswith('"') and value.endswith('"'):
+                                value = value[1:-1]
+                            elif value.startswith("'") and value.endswith("'"):
+                                value = value[1:-1]
+                            if value:
+                                logger.info("Email password loaded from ../.env file")
+                                return value
+            except Exception as e:
+                logger.warning(f"Could not read ../.env file: {e}")
+
+        # Try config file
+        password = getattr(config.orchestration, 'email_password', None)
+        if password:
+            logger.info("Email password loaded from config file")
+            return password
+
+        # Fall back to environment variable
+        password = os.environ.get('EMAIL_PASSWORD')
+        if password:
+            logger.info("Email password loaded from environment variable")
+            return password
+
+        logger.warning("No email password found in ../.env, config, or environment")
+        return None
 
     def send_email(self,
                    subject: str,
@@ -129,11 +179,22 @@ class EmailReporter:
                     part.add_header('Content-Disposition', f'attachment; filename={file_path.name}')
                     msg.attach(part)
 
-            # Send email
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.sender, self.password)
-                server.send_message(msg)
+            # Send email - use SSL for port 465, STARTTLS for 587
+            if self.smtp_port == 465:
+                # Direct SSL connection
+                import ssl
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port,
+                                      context=context, timeout=30) as server:
+                    server.login(self.sender, self.password)
+                    server.send_message(msg)
+            else:
+                # STARTTLS connection (port 587)
+                with smtplib.SMTP(self.smtp_server, self.smtp_port,
+                                  timeout=30) as server:
+                    server.starttls()
+                    server.login(self.sender, self.password)
+                    server.send_message(msg)
 
             logger.info(f"Email sent: {subject}")
             return True

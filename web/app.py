@@ -439,6 +439,125 @@ def api_recording_update(session_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/recordings/<session_id>', methods=['DELETE'])
+def api_recording_delete(session_id):
+    """
+    API endpoint: Delete a recording session
+
+    This will:
+    1. Delete associated features from the features table
+    2. Unlink from recording_cycles (set session_id to NULL)
+    3. Delete the recording_sessions entry
+    """
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+
+            # Check if recording exists
+            cursor.execute("SELECT id FROM recording_sessions WHERE session_id = %s", (session_id,))
+            existing = cursor.fetchone()
+
+            if not existing:
+                return jsonify({'success': False, 'error': 'Recording not found'}), 404
+
+            # 1. Delete features associated with this session (by source_file pattern)
+            cursor.execute("""
+                DELETE FROM features
+                WHERE source_file LIKE %s
+            """, (f"%{session_id}%",))
+            features_deleted = cursor.rowcount
+
+            # 2. Unlink from recording_cycles (set session_id to NULL)
+            cursor.execute("""
+                UPDATE recording_cycles
+                SET session_id = NULL
+                WHERE session_id = %s
+            """, (session_id,))
+            cycles_unlinked = cursor.rowcount
+
+            # 3. Delete the recording session entry
+            cursor.execute("DELETE FROM recording_sessions WHERE session_id = %s", (session_id,))
+
+            conn.commit()
+
+            logger.info(f"Deleted recording {session_id}: {features_deleted} features deleted, {cycles_unlinked} cycles unlinked")
+
+            return jsonify({
+                'success': True,
+                'message': f'Recording deleted',
+                'details': {
+                    'features_deleted': features_deleted,
+                    'cycles_unlinked': cycles_unlinked
+                }
+            })
+
+    except Exception as e:
+        logger.error(f"Failed to delete recording {session_id}: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/recordings/bulk-delete', methods=['POST'])
+def api_recordings_bulk_delete():
+    """
+    API endpoint: Delete multiple recording sessions
+
+    Request body:
+        session_ids: list of session IDs to delete
+    """
+    try:
+        data = request.json
+        session_ids = data.get('session_ids', [])
+
+        if not session_ids:
+            return jsonify({'success': False, 'error': 'No session IDs provided'}), 400
+
+        deleted = 0
+        failed = []
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            for session_id in session_ids:
+                try:
+                    # Delete features (by source_file pattern)
+                    cursor.execute("""
+                        DELETE FROM features
+                        WHERE source_file LIKE %s
+                    """, (f"%{session_id}%",))
+
+                    # Unlink from recording_cycles
+                    cursor.execute("""
+                        UPDATE recording_cycles
+                        SET session_id = NULL
+                        WHERE session_id = %s
+                    """, (session_id,))
+
+                    # Delete recording session
+                    cursor.execute("DELETE FROM recording_sessions WHERE session_id = %s", (session_id,))
+
+                    if cursor.rowcount > 0:
+                        deleted += 1
+                    else:
+                        failed.append({'session_id': session_id, 'error': 'Not found'})
+
+                except Exception as e:
+                    failed.append({'session_id': session_id, 'error': str(e)})
+
+            conn.commit()
+
+        logger.info(f"Bulk delete: {deleted} recordings deleted, {len(failed)} failed")
+
+        return jsonify({
+            'success': True,
+            'deleted': deleted,
+            'failed': failed
+        })
+
+    except Exception as e:
+        logger.error(f"Bulk delete failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/pipeline/status')
 def api_pipeline_status():
     """
@@ -1649,45 +1768,61 @@ def api_continuous_experiment_delete(experiment_id):
             cursor.execute("SELECT COUNT(*) as cnt FROM recording_cycles WHERE experiment_id = %s", (experiment_id,))
             cycle_count = cursor.fetchone()['cnt']
 
-            # Get session IDs for this experiment to delete features and recording_sessions
+            # Get session IDs from BOTH recording_cycles AND recording_sessions
+            # (some sessions may be linked directly without a cycle entry)
             cursor.execute("""
                 SELECT session_id FROM recording_cycles
                 WHERE experiment_id = %s AND session_id IS NOT NULL
             """, (experiment_id,))
-            session_ids = [row['session_id'] for row in cursor.fetchall()]
+            cycle_session_ids = [row['session_id'] for row in cursor.fetchall()]
+
+            cursor.execute("""
+                SELECT session_id FROM recording_sessions
+                WHERE experiment_id = %s AND session_id IS NOT NULL
+            """, (experiment_id,))
+            recording_session_ids = [row['session_id'] for row in cursor.fetchall()]
+
+            # Combine and deduplicate
+            session_ids = list(set(cycle_session_ids + recording_session_ids))
 
             # Count features and recording sessions
             features_count = 0
-            sessions_count = 0
+            sessions_count = len(recording_session_ids)
+
             if session_ids:
                 placeholders = ','.join(['%s'] * len(session_ids))
 
                 # Count features
                 cursor.execute(f"""
                     SELECT COUNT(*) as cnt FROM features
-                    WHERE session_id IN ({placeholders})
-                """, session_ids)
+                    WHERE source_file IN (
+                        SELECT stereo_filename FROM recording_sessions
+                        WHERE session_id IN ({placeholders})
+                    ) OR session_id IN ({placeholders})
+                """, session_ids + session_ids)
                 features_count = cursor.fetchone()['cnt']
-
-                # Count recording sessions
-                cursor.execute(f"""
-                    SELECT COUNT(*) as cnt FROM recording_sessions
-                    WHERE experiment_id = %s
-                """, (experiment_id,))
-                sessions_count = cursor.fetchone()['cnt']
 
             # Delete related records (cascade)
             logger.info(f"Deleting experiment {experiment_id}: {cycle_count} cycles, {alert_count} alerts, {sessions_count} sessions, {features_count} features")
 
+            # 1. Delete experiment_alerts (has FK to continuous_experiments)
             cursor.execute("DELETE FROM experiment_alerts WHERE experiment_id = %s", (experiment_id,))
+
+            # 2. Delete recording_cycles (has FK to continuous_experiments)
             cursor.execute("DELETE FROM recording_cycles WHERE experiment_id = %s", (experiment_id,))
 
-            # Delete features for this experiment's sessions
+            # 3. Delete features for this experiment's sessions
             if session_ids:
                 placeholders = ','.join(['%s'] * len(session_ids))
-                cursor.execute(f"DELETE FROM features WHERE session_id IN ({placeholders})", session_ids)
+                # Delete by session_id or by source_file matching stereo_filename
+                cursor.execute(f"""
+                    DELETE FROM features WHERE source_file IN (
+                        SELECT stereo_filename FROM recording_sessions
+                        WHERE session_id IN ({placeholders})
+                    ) OR session_id IN ({placeholders})
+                """, session_ids + session_ids)
 
-            # Delete recording sessions for this experiment
+            # 4. Delete recording sessions for this experiment
             cursor.execute("DELETE FROM recording_sessions WHERE experiment_id = %s", (experiment_id,))
 
             # Delete the experiment itself

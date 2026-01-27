@@ -138,12 +138,6 @@
                 </table>
             </div>
 
-            <!-- Pagination -->
-            <nav aria-label="Recordings pagination" class="mt-3">
-                <ul class="pagination justify-content-center" id="pagination">
-                    <!-- Populated dynamically -->
-                </ul>
-            </nav>
         </div>
     </div>
 
@@ -160,6 +154,9 @@
                     </button>
                     <button class="btn btn-danger btn-sm" id="btnBulkReject">
                         <i class="bi bi-x-circle"></i> Bulk Reject
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" id="btnBulkDelete">
+                        <i class="bi bi-trash"></i> Bulk Delete
                     </button>
                     <button class="btn btn-secondary btn-sm" id="btnDeselectAll">
                         Deselect All
@@ -198,8 +195,7 @@
 let recordings = [];
 let filteredRecordings = [];
 let selectedRecordings = new Set();
-let currentPage = 1;
-const recordingsPerPage = 25;
+let dataTable = null;
 
 // Load recordings
 async function loadRecordings() {
@@ -303,7 +299,6 @@ function applyFilters() {
         return true;
     });
 
-    currentPage = 1;
     updateStats();
     renderTable();
 }
@@ -317,19 +312,15 @@ function clearFilters() {
     document.getElementById('filterSearch').value = '';
 
     filteredRecordings = recordings;
-    currentPage = 1;
     updateStats();
     renderTable();
 }
 
-// Render table
+// Render table with DataTables
 function renderTable() {
     const tbody = document.getElementById('recordingsTableBody');
-    const startIdx = (currentPage - 1) * recordingsPerPage;
-    const endIdx = startIdx + recordingsPerPage;
-    const pageRecordings = filteredRecordings.slice(startIdx, endIdx);
 
-    if (pageRecordings.length === 0) {
+    if (filteredRecordings.length === 0) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="9" class="text-center text-muted py-4">
@@ -338,13 +329,13 @@ function renderTable() {
             </tr>
         `;
         document.getElementById('recordingCount').textContent = '0 recordings';
-        renderPagination();
         return;
     }
 
-    tbody.innerHTML = pageRecordings.map(rec => {
+    tbody.innerHTML = filteredRecordings.map(rec => {
         const status = getStatusBadge(rec);
         const date = new Date(rec.recording_date).toLocaleString();
+        const sortableDate = rec.recording_date;
 
         return `
             <tr>
@@ -354,8 +345,8 @@ function renderTable() {
                            ${selectedRecordings.has(rec.session_id) ? 'checked' : ''}>
                 </td>
                 <td><a href="#" class="text-decoration-none" onclick="showDetails('${rec.session_id}'); return false;">${rec.session_id}</a></td>
-                <td>${date}</td>
-                <td>${rec.duration_seconds}s</td>
+                <td data-order="${sortableDate}">${date}</td>
+                <td data-order="${rec.duration_seconds || 0}">${rec.duration_seconds != null ? rec.duration_seconds + 's' : 'N/A'}</td>
                 <td>${rec.channel_1_source || 'N/A'} <span class="badge bg-secondary">class ${rec.channel_1_expected_class || '?'}</span></td>
                 <td>${rec.channel_2_source || 'N/A'} <span class="badge bg-secondary">class ${rec.channel_2_expected_class || '?'}</span></td>
                 <td>${rec.experiment_id || 'N/A'}</td>
@@ -372,6 +363,9 @@ function renderTable() {
                         <button class="btn btn-outline-info" onclick="showDetails('${rec.session_id}')" title="Details">
                             <i class="bi bi-info-circle"></i>
                         </button>
+                        <button class="btn btn-outline-danger" onclick="deleteRecording('${rec.session_id}')" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -381,12 +375,52 @@ function renderTable() {
     document.getElementById('recordingCount').textContent =
         `${filteredRecordings.length} recording${filteredRecordings.length !== 1 ? 's' : ''}`;
 
-    // Add checkbox listeners
+    // Initialize or reinitialize DataTables
+    initDataTable();
+
+    // Add checkbox listeners after DataTables renders
     document.querySelectorAll('.recording-checkbox').forEach(cb => {
         cb.addEventListener('change', handleCheckboxChange);
     });
+}
 
-    renderPagination();
+// Initialize DataTables
+function initDataTable() {
+    // Destroy existing DataTable if it exists
+    if (dataTable) {
+        dataTable.destroy();
+    }
+
+    // Initialize DataTables with Bootstrap 5 styling
+    dataTable = $('#recordingsTable').DataTable({
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[2, 'desc']], // Sort by date descending
+        columnDefs: [
+            { orderable: false, targets: [0, 8] }, // Disable sorting on checkbox and actions columns
+            { searchable: false, targets: [0, 8] } // Disable searching on checkbox and actions columns
+        ],
+        language: {
+            search: "Search recordings:",
+            lengthMenu: "Show _MENU_ per page",
+            info: "Showing _START_ to _END_ of _TOTAL_ recordings",
+            infoEmpty: "No recordings found",
+            infoFiltered: "(filtered from _MAX_ total recordings)",
+            paginate: {
+                first: "First",
+                last: "Last",
+                next: "Next",
+                previous: "Previous"
+            }
+        },
+        drawCallback: function() {
+            // Re-attach checkbox listeners after each draw
+            document.querySelectorAll('.recording-checkbox').forEach(cb => {
+                cb.removeEventListener('change', handleCheckboxChange);
+                cb.addEventListener('change', handleCheckboxChange);
+            });
+        }
+    });
 }
 
 // Get status badge HTML
@@ -406,52 +440,6 @@ function getStatusBadge(rec) {
     return '<span class="badge bg-secondary">Unknown</span>';
 }
 
-// Render pagination
-function renderPagination() {
-    const totalPages = Math.ceil(filteredRecordings.length / recordingsPerPage);
-    const pagination = document.getElementById('pagination');
-
-    if (totalPages <= 1) {
-        pagination.innerHTML = '';
-        return;
-    }
-
-    let html = `
-        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="changePage(${currentPage - 1}); return false;">Previous</a>
-        </li>
-    `;
-
-    for (let i = 1; i <= totalPages; i++) {
-        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
-            html += `
-                <li class="page-item ${i === currentPage ? 'active' : ''}">
-                    <a class="page-link" href="#" onclick="changePage(${i}); return false;">${i}</a>
-                </li>
-            `;
-        } else if (i === currentPage - 3 || i === currentPage + 3) {
-            html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
-        }
-    }
-
-    html += `
-        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="changePage(${currentPage + 1}); return false;">Next</a>
-        </li>
-    `;
-
-    pagination.innerHTML = html;
-}
-
-// Change page
-function changePage(page) {
-    const totalPages = Math.ceil(filteredRecordings.length / recordingsPerPage);
-    if (page < 1 || page > totalPages) return;
-
-    currentPage = page;
-    renderTable();
-    window.scrollTo(0, 0);
-}
 
 // Handle checkbox changes
 function handleCheckboxChange(event) {
@@ -515,7 +503,7 @@ async function showDetails(sessionId) {
                 <table class="table table-sm">
                     <tr><th>Session ID:</th><td>${rec.session_id}</td></tr>
                     <tr><th>Date:</th><td>${new Date(rec.recording_date).toLocaleString()}</td></tr>
-                    <tr><th>Duration:</th><td>${rec.duration_seconds} seconds</td></tr>
+                    <tr><th>Duration:</th><td>${rec.duration_seconds != null ? rec.duration_seconds + ' seconds' : 'N/A'}</td></tr>
                     <tr><th>Sample Rate:</th><td>${rec.sample_rate || 'N/A'} Hz</td></tr>
                     <tr><th>File:</th><td>${rec.stereo_filename || 'N/A'}</td></tr>
                 </table>
@@ -681,6 +669,70 @@ document.getElementById('btnBulkReject').addEventListener('click', async () => {
     selectedRecordings.clear();
     updateBulkActions();
     loadRecordings();
+});
+
+// Delete single recording
+async function deleteRecording(sessionId) {
+    if (!confirm(`Are you sure you want to delete recording ${sessionId}?\n\nThis will also delete associated features and unlink from cycles.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/recordings/${sessionId}`, {
+            method: 'DELETE'
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            alert(`Recording deleted.\n\nDetails:\n- Features deleted: ${result.details.features_deleted}\n- Cycles unlinked: ${result.details.cycles_unlinked}`);
+            loadRecordings();
+        } else {
+            alert(`Failed to delete: ${result.error}`);
+        }
+    } catch (error) {
+        console.error(`Failed to delete ${sessionId}:`, error);
+        alert(`Failed to delete recording: ${error.message}`);
+    }
+}
+
+// Bulk delete
+document.getElementById('btnBulkDelete').addEventListener('click', async () => {
+    if (selectedRecordings.size === 0) return;
+
+    if (!confirm(`Are you sure you want to delete ${selectedRecordings.size} recording(s)?\n\nThis action cannot be undone. Associated features will also be deleted.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/recordings/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_ids: Array.from(selectedRecordings) })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            let msg = `Deleted ${result.deleted} recording(s)`;
+            if (result.failed && result.failed.length > 0) {
+                msg += `\n\nFailed to delete ${result.failed.length}:\n`;
+                result.failed.slice(0, 5).forEach(f => {
+                    msg += `- ${f.session_id}: ${f.error}\n`;
+                });
+                if (result.failed.length > 5) {
+                    msg += `... and ${result.failed.length - 5} more`;
+                }
+            }
+            alert(msg);
+            selectedRecordings.clear();
+            updateBulkActions();
+            loadRecordings();
+        } else {
+            alert(`Bulk delete failed: ${result.error}`);
+        }
+    } catch (error) {
+        console.error('Bulk delete failed:', error);
+        alert(`Bulk delete failed: ${error.message}`);
+    }
 });
 
 // Event listeners

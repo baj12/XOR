@@ -22,24 +22,24 @@ The continuous learning orchestrator sends automated emails for:
 5. Click **Generate**
 6. Copy the 16-character password (e.g., `abcd efgh ijkl mnop`)
 
-### 3. Configure Environment Variable
 
-**On Mac/Linux:**
+### 3. Configure Email Password
+
+The email password is stored in the `../.env` file (parent directory of XOR project) for security.
+
+**Add to `../.env` file:**
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
-export EMAIL_PASSWORD="abcdefghijklmnop"  # Remove spaces from app password
-
-# Reload shell config
-source ~/.bashrc  # or source ~/.zshrc
+# Email password for continuous learning alerts (Gmail app password)
+EMAIL_PASSWORD="abcdefghijklmnop"  # Remove spaces from app password
 ```
 
-**On Windows:**
-```powershell
-# PowerShell
-$env:EMAIL_PASSWORD = "abcdefghijklmnop"
+The system will automatically load the password from this file. This is more secure than shell environment variables in `.bashrc`/`.zshrc` which may be exposed in process listings.
 
-# Or set permanently via System Properties > Environment Variables
-```
+**Priority order for password loading:**
+
+1. `../.env` file (recommended)
+2. Config file `email_password` field
+3. Environment variable `EMAIL_PASSWORD`
 
 ### 4. Update Configuration File
 
@@ -157,7 +157,8 @@ orchestration:
 **Problem**: Email password is incorrect or not set.
 
 **Solutions**:
-1. Check environment variable is set: `echo $EMAIL_PASSWORD`
+
+1. Check `../.env` file contains `EMAIL_PASSWORD="your-app-password"`
 2. Verify app password is correct (no spaces)
 3. Ensure 2FA is enabled and app password is generated
 4. Try regenerating the app password
@@ -367,13 +368,16 @@ class EmailReporter:
 ## Summary
 
 ✅ **Required Steps**:
+
 1. Enable 2FA on email account
 2. Generate app-specific password
-3. Set `EMAIL_PASSWORD` environment variable
+3. Add `EMAIL_PASSWORD="your-password"` to `../.env` file
 4. Update `email_recipients` and `email_sender` in config
 5. Test email sending
 
 ⚠️ **Important**:
+
+- Store password in `../.env` file (outside project directory)
 - Never commit email passwords to git
 - Use app passwords, not main account passwords
 - Start with test emails before production

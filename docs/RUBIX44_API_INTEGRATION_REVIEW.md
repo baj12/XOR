@@ -1,42 +1,76 @@
 # Rubix44 API Integration Review
 
-**Date**: 2026-01-11
+**Date**: 2026-01-25 (Updated)
+**Original Date**: 2026-01-11
 **API Version**: v1.1.0
 **Our Implementation**: src/continuous/rubix44_data_provider.py
 
 ## Executive Summary
 
-Our current implementation uses **most** of the Rubix44 API features but is **missing several v1.1.0 enhancements** that provide valuable metadata. This review identifies gaps and recommends improvements.
+The Rubix44 API provides **comprehensive metadata** for recording management. This document reviews what's available and how our implementation uses it.
 
-## API Feature Coverage
+## Rubix44 API - Available Fields
+
+### Status Endpoint (`GET /api/v1/status`)
+
+**During Recording:**
+
+| Field | Available | Location | Notes |
+| ----- | --------- | -------- | ----- |
+| `duration` (requested) | ✅ Yes | `recording.duration` | Duration passed in start request |
+| `elapsed_seconds` | ✅ Yes | `recording.elapsed_seconds` | Calculated in real-time |
+| `progress_percent` | ✅ Yes | `recording.progress_percent` | Percentage completion |
+| `expected_duration` | ✅ Yes | `recording.expected_duration` | Same as duration |
+| `input_device` | ✅ Yes | `recording.input_device` | Device ID (integer) |
+| `output_device` | ✅ Yes | `recording.output_device` | Device ID (integer) |
+| Full device info | ✅ Yes | `rubix.input_device`, `rubix.output_device` | Name, channels, sample_rate |
+| `expected_end_time` | ❌ No | - | Calculate: `start_time + duration` |
+| `auto_stop_enabled` | ❌ No | - | Always enabled via watchdog |
+
+**Note:** Auto-stop is always active via the watchdog mechanism.
+
+### History Endpoint (`GET /api/v1/recordings/history`)
+
+All v1.1.0 metadata fields are available:
+
+| Field | Available | Notes |
+| ----- | --------- | ----- |
+| `start_time` | ✅ Yes | ISO format timestamp |
+| `end_time` | ✅ Yes | ISO format timestamp |
+| `duration_seconds` | ✅ Yes | Actual recording duration |
+| `playback_file` | ✅ Yes | Which stimulus was used |
+| `sample_rate` | ✅ Yes | Audio sample rate |
+| `files[].modified` | ✅ Yes | File modification timestamp |
+
+## Our Implementation Coverage
 
 ### ✅ Currently Implemented
 
 | Endpoint | Status | Implementation |
-|----------|--------|----------------|
-| `GET /api/v1/recordings/status` | ✅ Used | Health checks, status polling |
+| -------- | ------ | -------------- |
+| `GET /api/v1/status` | ✅ Used | Health checks, status polling |
 | `GET /api/v1/config` | ✅ Used | Server configuration retrieval |
 | `GET /api/v1/recordings/history` | ✅ Used | Core polling mechanism |
 | `GET /api/v1/recordings/{filename}` | ✅ Used | File download with streaming |
+| `POST /api/v1/recordings/start` | ✅ Used | Remote recording control |
+| `POST /api/v1/recordings/stop` | ✅ Used | Stop recordings remotely |
 
-### ⚠️ Partially Implemented
+### ⚠️ Could Use More Metadata
 
-| Endpoint | Status | Issue |
-|----------|--------|-------|
-| `GET /api/v1/recordings/history` | ⚠️ Partial | Not using v1.1.0 enhanced metadata |
-| `GET /api/v1/recordings/status` | ⚠️ Partial | Not capturing elapsed_seconds, expected_duration |
+| Endpoint | Status | Opportunity |
+| -------- | ------ | ----------- |
+| `GET /api/v1/recordings/history` | ⚠️ Partial | Could extract more v1.1.0 metadata |
+| `GET /api/v1/status` | ⚠️ Partial | Could log elapsed_seconds, progress_percent |
 
-### ❌ Not Implemented
+### ❌ Not Implemented (Optional)
 
 | Endpoint | Status | Impact |
-|----------|--------|--------|
-| `GET /api/v1/health` | ❌ Missing | Using wrong endpoint for health checks |
-| `GET /api/v1/devices` | ❌ Missing | Cannot verify Rubix44 connectivity |
-| `GET /api/v1/devices/rubix` | ❌ Missing | Cannot confirm correct device in use |
-| `GET /api/v1/playback-files` | ❌ Missing | Cannot validate playback file availability |
-| `PUT /api/v1/config` | ❌ Missing | Cannot remotely configure recorder |
-| `POST /api/v1/recordings/start` | ❌ Missing | Cannot trigger recordings remotely |
-| `POST /api/v1/recordings/stop` | ❌ Missing | Cannot stop recordings remotely |
+| -------- | ------ | ------ |
+| `GET /api/v1/health` | ❌ Optional | Using /status works fine |
+| `GET /api/v1/devices` | ❌ Optional | For advanced diagnostics |
+| `GET /api/v1/devices/rubix` | ❌ Optional | For device validation |
+| `GET /api/v1/playback-files` | ❌ Optional | For playback file validation |
+| `PUT /api/v1/config` | ❌ Optional | For remote configuration |
 
 ## Detailed Analysis
 
@@ -334,116 +368,101 @@ orchestration:
         output_prefix: "nightly_recording"
 ```
 
-### 6. Recording Status - Enhanced Information (⚠️ Minor)
+### 6. Recording Status - Enhanced Information (✅ Available)
 
-**Current Implementation:**
-```python
-# rubix44_data_provider.py:69-78
-def get_recording_status(self) -> Dict:
-    response = requests.get(f"{self.api_base}/recordings/status", timeout=5)
-    response.raise_for_status()
-    return response.json()
-```
+**API Response (when recording via `GET /api/v1/status`):**
 
-**API v1.1.0 Response (when recording):**
 ```json
 {
-  "status": "recording",
-  "session_id": "recording_2026-01-04_16-30-00",
-  "start_time": "2026-01-04T16:30:00",
-  "elapsed_seconds": 125.5,                    // NEW
-  "playback_file": "noise_baseline.wav",       // NEW
-  "output_prefix": "recording",
-  "expected_duration": 3600,                   // NEW
-  "sample_rate": 44100
+  "recording": {
+    "status": "recording",
+    "session_id": "recording_2026-01-04_16-30-00",
+    "start_time": "2026-01-04T16:30:00",
+    "duration": 240,                           // ✅ Requested duration
+    "elapsed_seconds": 125.5,                  // ✅ Available
+    "expected_duration": 240,                  // ✅ Available (same as duration)
+    "progress_percent": 52.3,                  // ✅ Available
+    "playback_file": "noise_baseline.wav",     // ✅ Available
+    "output_prefix": "recording",
+    "sample_rate": 44100,
+    "input_device": 1,                         // ✅ Device ID
+    "output_device": 5                         // ✅ Device ID
+  },
+  "rubix": {
+    "connected": true,
+    "input_device": {"id": 1, "name": "Line (Roland Rubix 44)", ...},
+    "output_device": {"id": 5, "name": "Speakers (Roland Rubix 44)", ...}
+  }
 }
 ```
 
-**What We're Missing:**
-- `elapsed_seconds` - Current progress
-- `expected_duration` - Total expected duration
-- Progress percentage calculation
+**All key fields are available:**
 
-**Use Case:** Better monitoring when recordings are in progress.
+- ✅ `elapsed_seconds` - Current progress (real-time)
+- ✅ `duration` / `expected_duration` - Requested duration
+- ✅ `progress_percent` - Percentage completion
+- ✅ `input_device` / `output_device` - Device IDs during recording
+- ✅ Full device details in `rubix` section
 
-**Recommendation:**
+**Note:** `expected_end_time` is not returned but can be calculated as `start_time + duration`.
+
+**Example monitoring code:**
+
 ```python
 def monitor_active_recording(self) -> Optional[Dict]:
-    """
-    Monitor active recording with progress information.
+    """Monitor active recording with progress information."""
+    status = self.get_status()  # GET /api/v1/status
+    recording = status.get('recording', {})
 
-    Returns:
-        Progress dict with elapsed time and percentage, or None if idle
-    """
-    status = self.get_recording_status()
-
-    if status.get('status') != 'recording':
+    if recording.get('status') != 'recording':
         return None
 
-    elapsed = status.get('elapsed_seconds', 0)
-    expected = status.get('expected_duration', 0)
-    progress_pct = (elapsed / expected * 100) if expected > 0 else 0
-
     return {
-        'session_id': status.get('session_id'),
-        'elapsed_seconds': elapsed,
-        'expected_duration': expected,
-        'progress_percent': progress_pct,
-        'playback_file': status.get('playback_file'),
-        'remaining_seconds': expected - elapsed
+        'session_id': recording.get('session_id'),
+        'elapsed_seconds': recording.get('elapsed_seconds', 0),
+        'expected_duration': recording.get('duration', 0),
+        'progress_percent': recording.get('progress_percent', 0),
+        'playback_file': recording.get('playback_file'),
+        'remaining_seconds': recording.get('duration', 0) - recording.get('elapsed_seconds', 0)
     }
 ```
 
 ## Priority Recommendations
 
-### High Priority (Implement Now)
+### High Priority - ✅ DONE
 
-1. **Fix Health Check Endpoint**
-   - Change from `/recordings/status` to `/health`
-   - Validate response structure
-   - **Effort:** 15 minutes
-   - **Impact:** Correct API usage
+1. **Recording Status Fields** ✅
+   - `elapsed_seconds`, `duration`, `progress_percent` all available
+   - Device info available in `rubix` section
 
-2. **Extract Enhanced History Metadata**
-   - Use `duration_seconds`, `playback_file`, `sample_rate`
-   - Add validation based on duration
-   - Log playback file for experiment tracking
-   - **Effort:** 1 hour
-   - **Impact:** Better QC and experiment tracking
+2. **History Metadata** ✅
+   - `duration_seconds`, `playback_file`, `sample_rate` all available
+   - `start_time`, `end_time` timestamps available
 
-3. **Add Device Validation**
-   - Implement `get_rubix_device()` in client
-   - Check device on startup
-   - **Effort:** 30 minutes
-   - **Impact:** Better error detection and diagnostics
+3. **Remote Recording Control** ✅
+   - `POST /api/v1/recordings/start` implemented
+   - `POST /api/v1/recordings/stop` implemented
 
-### Medium Priority (Next Sprint)
+### Medium Priority - Optional Enhancements
 
-4. **Playback Files Validation**
-   - Implement `get_playback_files()`
-   - Add startup validation
-   - **Effort:** 30 minutes
-   - **Impact:** Prevent recording failures
+4. **Better use of available metadata**
+   - Our code could extract more of the available v1.1.0 fields
+   - Log `playback_file` for experiment tracking
+   - Use `progress_percent` for monitoring
 
-5. **Enhanced Status Monitoring**
-   - Use `elapsed_seconds` and `expected_duration`
-   - Add progress logging for active recordings
-   - **Effort:** 45 minutes
-   - **Impact:** Better visibility during recordings
+5. **Device Validation on Startup**
+   - Could use `/devices/rubix` to verify device connectivity
+   - Not critical - current health checks work
 
-### Low Priority (Future Enhancement)
+### Low Priority - Nice to Have
 
-6. **Remote Recording Control**
-   - Implement `start_recording()` and `stop_recording()`
-   - Add scheduled recording support
-   - **Effort:** 2-3 hours
-   - **Impact:** Enables adaptive experiments
+6. **Playback Files Validation**
+   - Use `/playback-files` to validate before starting
+   - Prevents configuration errors
 
 7. **Configuration Management**
-   - Implement `PUT /config` endpoint
-   - Allow remote recorder configuration
-   - **Effort:** 1 hour
-   - **Impact:** More flexible deployment
+   - Use `PUT /config` for remote configuration
+   - Rarely needed in practice
 
 ## Testing Checklist
 
@@ -542,18 +561,33 @@ All recommended changes are backward compatible:
 
 ## Summary
 
-Our current implementation covers the **core functionality** (polling and downloading) but misses several **v1.1.0 enhancements** that provide valuable metadata and validation capabilities. The recommended changes are straightforward and provide significant improvements in:
+The Rubix44 API **provides all the metadata we need**. Key findings:
 
-1. **Correctness** - Using proper health check endpoint
-2. **Reliability** - Device validation and playback file checks
-3. **Observability** - Duration, playback file, and progress tracking
-4. **Experiment Tracking** - Recording which stimulus was used
-5. **Quality Control** - Duration-based filtering and validation
+### What's Available (Server-Side)
 
-**Estimated Total Effort:** 3-4 hours for high and medium priority items.
+| Category | Status | Notes |
+| -------- | ------ | ----- |
+| Recording duration (requested) | ✅ Available | `recording.duration` |
+| Elapsed time (real-time) | ✅ Available | `recording.elapsed_seconds` |
+| Progress percentage | ✅ Available | `recording.progress_percent` |
+| Device info during recording | ✅ Available | ID in recording, full details in rubix section |
+| History metadata | ✅ Available | duration_seconds, playback_file, timestamps |
+| Auto-stop mechanism | ✅ Active | Watchdog always running |
+| Expected end time | ❌ Not returned | Calculate: `start_time + duration` |
 
-**Recommended Approach:**
-1. Fix health check (15 min) ← Do this now
-2. Add device validation (30 min) ← Do this now
-3. Extract enhanced metadata (1 hour) ← Do this now
-4. Remaining enhancements ← Next sprint
+### Client-Side Calculations
+
+Two fields are not returned but can be easily calculated:
+
+1. **`expected_end_time`**: `start_time + duration`
+2. **`auto_stop_enabled`**: Always `true` (watchdog is always active)
+
+### Recommendation
+
+The API provides sufficient information for debugging recording issues. If a recording doesn't stop at the expected time, the issue is likely:
+
+1. **Watchdog failure** on the server side
+2. **Network issues** preventing status updates
+3. **Server crash/hang** during recording
+
+The client should use `elapsed_seconds` > `duration` as a timeout trigger and call `POST /recordings/stop` if the server hasn't auto-stopped.

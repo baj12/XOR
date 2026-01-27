@@ -63,20 +63,50 @@ class AutoQCValidator:
         Args:
             config: QC configuration dict with thresholds
         """
-        # Default thresholds
+        # Default thresholds - these should be overridden by experiment config
         self.min_separation_score = 0.7
-        self.min_duration = 3500  # seconds (allow 100s tolerance)
-        self.max_duration = 3700
-        self.min_samples_per_channel = 900
         self.auto_approve_threshold = 0.8  # Above this = auto-approve
         self.auto_reject_threshold = 0.6   # Below this = auto-reject
+
+        # Duration thresholds - derived from experiment's recording_duration_seconds
+        # Default: allow ±10% tolerance
+        default_duration = 3600  # 1 hour default
+        self.min_duration = default_duration * 0.9
+        self.max_duration = default_duration * 1.1
+
+        # Samples threshold - derived from duration / segment_duration
+        # Default: 90% of expected samples (to allow some tolerance)
+        self.min_samples_per_channel = int(default_duration * 0.9)  # ~3240 for 1hr at 1s segments
 
         # Override with config if provided
         if config:
             self.min_separation_score = config.get('auto_qc_min_separation_score', 0.7)
-            self.min_samples_per_channel = config.get('auto_qc_min_samples_per_channel', 900)
             self.auto_approve_threshold = config.get('auto_qc_auto_approve_threshold', 0.8)
             self.auto_reject_threshold = config.get('auto_qc_auto_reject_threshold', 0.6)
+
+            # Calculate duration thresholds from recording_duration_seconds
+            recording_duration = config.get('recording_duration_seconds', default_duration)
+            duration_tolerance = config.get('auto_qc_duration_tolerance', 0.1)  # 10% tolerance
+            self.min_duration = recording_duration * (1 - duration_tolerance)
+            self.max_duration = recording_duration * (1 + duration_tolerance)
+
+            # Calculate samples threshold from duration
+            # With 1-second segments, samples = duration
+            segment_duration = 1.0  # seconds
+            expected_samples = int(recording_duration / segment_duration)
+            samples_tolerance = config.get('auto_qc_samples_tolerance', 0.1)  # 10% tolerance
+
+            # Use config value if explicitly set, otherwise derive from duration
+            configured_min_samples = config.get('auto_qc_min_samples_per_channel')
+            if configured_min_samples and configured_min_samples < expected_samples:
+                # User explicitly set a lower threshold
+                self.min_samples_per_channel = configured_min_samples
+            else:
+                # Derive from expected samples with tolerance
+                self.min_samples_per_channel = int(expected_samples * (1 - samples_tolerance))
+
+            logger.info(f"QC thresholds: duration={self.min_duration:.0f}-{self.max_duration:.0f}s, "
+                       f"min_samples={self.min_samples_per_channel}")
 
         # Create config object for processor
         from types import SimpleNamespace

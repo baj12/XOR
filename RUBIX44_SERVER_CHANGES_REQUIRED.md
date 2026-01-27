@@ -1,29 +1,25 @@
-# ⚠️ RUBIX44 SERVER CHANGES REQUIRED
+# ✅ RUBIX44 SERVER API STATUS
 
-**Date:** 2026-01-04
-**Priority:** HIGH - Required for proper integration
+**Date:** 2026-01-25 (Updated)
+**Original Date:** 2026-01-04
+**Status:** Most features IMPLEMENTED
 
 ## Overview
 
-The following changes are needed on the rubix44-recorder server to fully support the recording management system workflow.
+This document tracks the Rubix44 API features needed for the recording management system. Most critical features are now implemented.
 
-## Required API Enhancements
+## API Feature Status
 
-### 1. Stop Recording Endpoint (CRITICAL)
+### 1. Stop Recording Endpoint ✅ IMPLEMENTED
 
-**Current Issue:** No way to stop an in-progress recording from the web interface.
-
-**Required Endpoint:**
+**Endpoint:**
 ```
 POST /api/v1/recordings/stop
 ```
 
-**Expected Behavior:**
-- Stop the current recording immediately
-- Finalize and save the WAV files
-- Return the session ID and file paths
+**Status:** ✅ Working
 
-**Expected Response:**
+**Response:**
 ```json
 {
   "success": true,
@@ -39,217 +35,154 @@ POST /api/v1/recordings/stop
 }
 ```
 
-**Implementation Notes:**
-- Should work even if recording hasn't reached the specified duration
-- Should calculate actual duration from start time to stop time
-- Should update the recording history with actual duration
+### 2. Recording Status During Recording ✅ IMPLEMENTED
 
-### 2. Recording Status Enhancements
+**Endpoint:** `GET /api/v1/status`
 
-**Current Issue:** Status endpoint doesn't provide enough detail about the current recording.
+**Status:** ✅ All fields available
 
-**Required Fields in `/api/v1/recordings/status`:**
+**Response during recording:**
 ```json
 {
-  "status": "recording",  // or "idle"
-  "session_id": "recording_2026-01-04_16-30-00",
-  "start_time": "2026-01-04T16:30:00",
-  "elapsed_seconds": 125.5,
-  "playback_file": "noise_baseline.wav",  // Currently playing
-  "output_prefix": "recording",
-  "expected_duration": 3600
+  "recording": {
+    "status": "recording",
+    "session_id": "recording_2026-01-04_16-30-00",
+    "start_time": "2026-01-04T16:30:00",
+    "duration": 240,                    // ✅ Requested duration
+    "elapsed_seconds": 125.5,           // ✅ Real-time elapsed
+    "expected_duration": 240,           // ✅ Same as duration
+    "progress_percent": 52.3,           // ✅ Percentage complete
+    "sample_rate": 44100,
+    "channels": 2,
+    "input_device": 1,                  // ✅ Device ID (integer)
+    "output_device": 5                  // ✅ Device ID (integer)
+  },
+  "rubix": {
+    "connected": true,
+    "input_device": {                   // ✅ Full device details
+      "id": 1,
+      "name": "Line (Roland Rubix 44)",
+      "channels": 2,
+      "sample_rate": 44100.0
+    },
+    "output_device": {
+      "id": 5,
+      "name": "Speakers (Roland Rubix 44)",
+      "channels": 2,
+      "sample_rate": 44100.0
+    }
+  }
 }
 ```
 
-**Currently Missing:**
-- `start_time`: When recording started (ISO format)
-- `elapsed_seconds`: How long has been recording
-- `playback_file`: Which file is currently playing back
-- `output_prefix`: The prefix being used
+**Key fields for monitoring:**
 
-**Use Case:**
-- Web interface can display: "Recording in progress: 2:05 / 60:00"
-- Can show which playback file is active
-- Can update duration field automatically when recording is selected
+| Field | Available | Notes |
+| ----- | --------- | ----- |
+| `duration` (requested) | ✅ Yes | The duration passed in start request |
+| `elapsed_seconds` | ✅ Yes | Calculated in real-time during recording |
+| `progress_percent` | ✅ Yes | Percentage completion |
+| `expected_duration` | ✅ Yes | Same as duration |
+| `input_device` / `output_device` | ✅ Yes | Device ID in recording, full details in rubix section |
+| `expected_end_time` | ❌ No | Can be calculated: `start_time + duration` |
+| `auto_stop_enabled` | ❌ No | Always enabled via watchdog (implicit) |
 
-### 3. Recording History Enhancements
+**Note:** Auto-stop is always active via the watchdog mechanism. The `expected_end_time` can be calculated client-side as `start_time + duration`.
 
-**Current Issue:** History doesn't include all metadata needed for annotation.
+### 3. Recording History ✅ IMPLEMENTED
 
-**Required Fields in `/api/v1/recordings/history`:**
+**Endpoint:** `GET /api/v1/recordings/history`
 
-Each recording should include:
+**Status:** ✅ All fields available
+
+**Response:**
 ```json
 {
   "id": "recording_2026-01-04_16-30-00",
   "prefix": "recording",
   "timestamp": "2026-01-04_16-30-00",
-  "start_time": "2026-01-04T16:30:00",  // NEW: ISO format
-  "end_time": "2026-01-04T17:30:25",    // NEW: ISO format
-  "duration_seconds": 3625.5,            // NEW: Actual duration
-  "playback_file": "noise_baseline.wav", // NEW: What was played
-  "sample_rate": 44100,                  // NEW: Audio sample rate
+  "start_time": "2026:01:04T16:30:00",   // ✅ Available
+  "end_time": "2026:01:04T17:30:25",     // ✅ Available
+  "duration_seconds": 3625.5,             // ✅ Available
+  "playback_file": "noise_baseline.wav",  // ✅ Available
+  "sample_rate": 44100,                   // ✅ Available
   "files": [
     {
       "name": "recording_2026-01-04_16-30-00_stereo.wav",
-      "path": "/full/path/to/file",
+      "path": "recordings\\recording_2026-01-04_16-30-00_stereo.wav",
       "size": 123456789,
-      "modified": "2026-01-04T17:30:25"
+      "modified": "2026-01-04T17:30:25"   // ✅ Available
     }
   ]
 }
 ```
 
-**Currently Missing:**
-- `start_time`: Recording start timestamp
-- `end_time`: Recording end timestamp
-- `duration_seconds`: Actual recording duration
-- `playback_file`: Which playback file was used
-- `sample_rate`: Audio configuration
+**All fields now available:**
 
-**Use Case:**
-- Automatically populate duration when recording is selected for annotation
-- Track which playback file was used (important for metadata)
-- Show actual vs expected duration
+- ✅ `start_time`: Recording start timestamp
+- ✅ `end_time`: Recording end timestamp
+- ✅ `duration_seconds`: Actual recording duration
+- ✅ `playback_file`: Which playback file was used
+- ✅ `sample_rate`: Audio configuration
 
-### 4. Playback File Metadata
+### 4. Playback File Metadata ⚠️ PARTIAL
 
-**Current Issue:** Playback files endpoint only returns filenames.
+**Endpoint:** `GET /api/v1/playback-files`
 
-**Required Enhancement for `/api/v1/playback-files`:**
-```json
-[
-  {
-    "filename": "noise_baseline.wav",
-    "path": "/full/path/to/noise_baseline.wav",
-    "size": 987654321,
-    "duration_seconds": 120.5,  // NEW: Duration of the file
-    "sample_rate": 44100,        // NEW: Sample rate
-    "channels": 2,               // NEW: Mono/stereo
-    "format": "WAV",             // NEW: File format
-    "modified": "2026-01-01T12:00:00"
-  }
-]
-```
+**Status:** ⚠️ Basic info available, extended metadata not verified
 
-**Currently Missing:**
-- Audio file metadata (duration, sample rate, channels)
-- Full file information
-
-**Use Case:**
-- Validate recording settings before starting
-- Show expected recording size
-- Prevent configuration mismatches
-
-## Optional Enhancements
+## Optional Enhancements (Not Yet Implemented)
 
 ### 5. Recording Progress Callback (Nice to Have)
 
 **Feature:** WebSocket or SSE endpoint for real-time progress updates.
 
-**Endpoint:**
-```
-GET /api/v1/recordings/progress (Server-Sent Events)
-```
-
-**Event Stream:**
-```
-event: progress
-data: {"elapsed": 125.5, "status": "recording"}
-
-event: complete
-data: {"session_id": "...", "duration": 3625.5}
-
-event: error
-data: {"error": "Disk space low"}
-```
-
-**Use Case:**
-- Live progress bar in web interface
-- Real-time recording status
-- Better user experience
+**Status:** ❌ Not implemented (polling works fine for most use cases)
 
 ### 6. Delete Recording Endpoint (Nice to Have)
 
-**Endpoint:**
-```
-DELETE /api/v1/recordings/<session_id>
-```
+**Endpoint:** `DELETE /api/v1/recordings/<session_id>`
 
-**Use Case:**
-- Clean up failed or test recordings
-- Manage disk space
-- Remove recordings rejected during QC
+**Status:** ❌ Not implemented
 
-## Implementation Priority
+## Implementation Status Summary
 
-### P0 - Critical (Required for MVP)
-1. ✅ Stop recording endpoint
-2. ✅ Recording status enhancements (elapsed time, playback file)
-3. ✅ History metadata (duration, playback file)
-
-### P1 - Important (Needed for good UX)
-4. ⚠️ Playback file metadata
-5. ⚠️ Start/end timestamps in history
-
-### P2 - Nice to Have
-6. ⏸️ Progress updates (WebSocket/SSE)
-7. ⏸️ Delete recording endpoint
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Stop recording endpoint | ✅ Done | POST /api/v1/recordings/stop |
+| Recording status (elapsed, duration) | ✅ Done | All fields available |
+| Device info during recording | ✅ Done | ID in recording, full details in rubix section |
+| History metadata | ✅ Done | duration_seconds, playback_file, timestamps |
+| Auto-stop via watchdog | ✅ Done | Always active |
+| Playback file metadata | ⚠️ Partial | Basic info available |
+| Progress WebSocket/SSE | ❌ Not done | Use polling instead |
+| Delete recording | ❌ Not done | Manual cleanup required |
 
 ## Testing Checklist
 
-After implementing changes, test:
-
-- [ ] Stop recording via API works
-- [ ] Status shows elapsed time during recording
-- [ ] Status shows playback file being used
-- [ ] History includes duration_seconds
-- [ ] History includes playback_file
-- [ ] History includes start_time/end_time
-- [ ] Web interface can fetch and display all new fields
-
-## API Compatibility
-
-**Backward Compatibility:**
-- All new fields should be ADDED, not replacing existing ones
-- Existing fields should maintain current format
-- Clients without updates should continue to work
-
-**Version Consideration:**
-- Consider adding `/api/v2/` endpoints if breaking changes needed
-- Document API version in response headers
+- [x] Stop recording via API works
+- [x] Status shows elapsed time during recording
+- [x] Status shows duration (requested)
+- [x] Status shows progress_percent
+- [x] History includes duration_seconds
+- [x] History includes playback_file
+- [x] History includes start_time/end_time
+- [x] Device info available (in rubix section)
 
 ## Example Integration Code
 
-### Stop Recording (Web Interface)
-```javascript
-// In web/templates/annotate.html
-async function stopRecording() {
-    const response = await fetch('http://10.0.0.58:5000/api/v1/recordings/stop', {
-        method: 'POST'
-    });
-    const result = await response.json();
-
-    if (result.success) {
-        // Use actual duration from response
-        console.log(`Recording stopped: ${result.duration_seconds}s`);
-        // Refresh recordings list
-        loadRubix44Recordings();
-    }
-}
-```
-
 ### Get Recording Status (Web Interface)
+
 ```javascript
 // Poll every 2 seconds during recording
 async function updateRecordingStatus() {
-    const response = await fetch('http://10.0.0.58:5000/api/v1/recordings/status');
-    const status = await response.json();
+    const response = await fetch('http://10.0.0.58:5000/api/v1/status');
+    const data = await response.json();
 
-    if (status.status === 'recording') {
-        const elapsed = status.elapsed_seconds;
-        const total = status.expected_duration;
-        const percent = (elapsed / total) * 100;
+    if (data.recording.status === 'recording') {
+        const elapsed = data.recording.elapsed_seconds;
+        const total = data.recording.duration;  // or expected_duration
+        const percent = data.recording.progress_percent;
 
         // Update progress bar
         document.getElementById('recordingProgress').style.width = percent + '%';
@@ -259,47 +192,18 @@ async function updateRecordingStatus() {
 }
 ```
 
-## Migration Guide
+### Calculate Expected End Time (Client-Side)
 
-### For Existing Recordings
-
-Recordings created before these changes won't have all metadata. The web interface should handle gracefully:
-
-```python
-# In annotation handler
-duration = recording.get('duration_seconds') or 'Unknown'
-playback_file = recording.get('playback_file') or 'N/A'
-start_time = recording.get('start_time') or recording.get('timestamp')
+```javascript
+// Since expected_end_time is not returned, calculate it:
+function getExpectedEndTime(startTime, durationSeconds) {
+    const start = new Date(startTime);
+    return new Date(start.getTime() + durationSeconds * 1000);
+}
 ```
-
-### Database Updates
-
-After rubix44 server is updated, run migration to backfill metadata:
-
-```python
-# scripts/migrate_rubix44_metadata.py
-# Fetch updated history from rubix44
-# Update recording_sessions table with new fields
-```
-
-## Contact & Questions
-
-If implementing these changes, please coordinate with:
-- Web interface maintainer (for integration testing)
-- Database admin (for schema updates if needed)
-
-## Status Tracking
-
-- [ ] Stop recording endpoint implemented
-- [ ] Status enhancements implemented
-- [ ] History enhancements implemented
-- [ ] Playback file metadata implemented
-- [ ] Web interface updated to use new fields
-- [ ] Integration testing complete
-- [ ] Documentation updated
 
 ---
 
-**Last Updated:** 2026-01-04
-**Requested By:** Recording Management System v2.0
-**Impact:** HIGH - Core functionality depends on these changes
+**Last Updated:** 2026-01-25
+**Original Date:** 2026-01-04
+**Status:** Most critical features IMPLEMENTED

@@ -64,11 +64,11 @@
     <!-- Header -->
     <div class="row mb-4">
         <div class="col">
-            <h2>
-                <i class="bi bi-plus-circle-fill text-primary"></i>
-                Create Continuous Experiment
+            <h2 id="pageTitle">
+                <i class="bi bi-plus-circle-fill text-primary" id="pageIcon"></i>
+                <span id="pageTitleText">Create Continuous Experiment</span>
             </h2>
-            <p class="text-muted">Configure an autonomous recording and training experiment</p>
+            <p class="text-muted" id="pageSubtitle">Configure an autonomous recording and training experiment</p>
         </div>
         <div class="col-auto">
             <a href="/continuous" class="btn btn-outline-secondary">
@@ -559,8 +559,126 @@ document.getElementById('experimentForm').addEventListener('submit', async (e) =
 document.getElementById('targetDuration').addEventListener('input', updatePreview);
 document.getElementById('recordingInterval').addEventListener('input', updatePreview);
 
+// Check URL for source experiment to copy from
+function getSourceExperimentId() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('from');
+}
+
+// Load source experiment data and pre-fill form
+async function loadSourceExperiment(experimentId) {
+    try {
+        const response = await fetch(`/api/continuous/experiments/${experimentId}`);
+        const data = await response.json();
+
+        if (!data.success || !data.experiment) {
+            showAlert(`Failed to load source experiment: ${data.error || 'Not found'}`, 'warning');
+            return;
+        }
+
+        const exp = data.experiment;
+
+        // Update page title to indicate this is a copy
+        document.getElementById('pageIcon').className = 'bi bi-copy text-info';
+        document.getElementById('pageTitleText').textContent = 'Re-run Experiment';
+        document.getElementById('pageSubtitle').textContent =
+            `Creating a copy of "${exp.experiment_name}" - modify any parameters below`;
+
+        // Generate new name with copy suffix
+        let newName = exp.experiment_name;
+        const copyMatch = newName.match(/\((\d+)\)$/);
+        if (copyMatch) {
+            // Already has a number, increment it
+            const num = parseInt(copyMatch[1]) + 1;
+            newName = newName.replace(/\(\d+\)$/, `(${num})`);
+        } else {
+            // Add (2) suffix
+            newName = `${newName} (2)`;
+        }
+
+        // Pre-fill basic settings
+        document.getElementById('experimentName').value = newName;
+        document.getElementById('targetDuration').value = exp.target_duration_weeks || 2;
+        document.getElementById('recordingInterval').value = exp.recording_interval_minutes || 60;
+        document.getElementById('recordingDuration').value = exp.recording_duration_seconds || 3600;
+
+        // Pre-fill channel configuration (wait for substances to load)
+        await waitForSubstancesLoaded();
+        document.getElementById('channel1Substance').value = exp.channel_1_substance || '';
+        document.getElementById('channel2Substance').value = exp.channel_2_substance || '';
+
+        // Pre-fill beaker configuration
+        document.getElementById('beaker1Role').value = exp.beaker_1_role || 'none';
+        document.getElementById('beaker1Content').value = exp.beaker_1_content || '';
+        document.getElementById('beaker2Role').value = exp.beaker_2_role || 'none';
+        document.getElementById('beaker2Content').value = exp.beaker_2_content || '';
+        document.getElementById('faradayCage').checked = exp.faraday_cage_used !== false;
+        document.getElementById('researcherName').value = exp.researcher_name || 'Autonomous';
+
+        // Pre-fill advanced settings
+        document.getElementById('qcMinSeparation').value = exp.auto_qc_min_separation_score || 0.7;
+        document.getElementById('qcAutoApprove').value = exp.auto_qc_auto_approve_threshold || 0.8;
+        document.getElementById('qcAutoReject').value = exp.auto_qc_auto_reject_threshold || 0.6;
+        document.getElementById('qcMinSamples').value = exp.auto_qc_min_samples_per_channel || 900;
+        document.getElementById('trainingWindow').value = exp.training_sliding_window_weeks || 2;
+        document.getElementById('batchSize').value = exp.training_batch_size || 32;
+        document.getElementById('epochsPerCycle').value = exp.training_epochs_per_cycle || 5;
+
+        // Pre-fill playback file (wait for it to load)
+        await waitForPlaybackFilesLoaded();
+        if (exp.playback_file) {
+            document.getElementById('playbackFile').value = exp.playback_file;
+        }
+
+        // Update preview with new values
+        updatePreview();
+
+        // Show info message
+        showAlert(
+            `<strong>Copying from:</strong> ${exp.experiment_name}<br>` +
+            `<small class="text-muted">Review and modify the parameters as needed, then click Create.</small>`,
+            'info'
+        );
+
+    } catch (error) {
+        console.error('Failed to load source experiment:', error);
+        showAlert(`Error loading source experiment: ${error.message}`, 'danger');
+    }
+}
+
+// Helper to wait for substances dropdown to be populated
+function waitForSubstancesLoaded() {
+    return new Promise((resolve) => {
+        const check = () => {
+            const select = document.getElementById('channel1Substance');
+            if (select.options.length > 1) {
+                resolve();
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
+}
+
+// Helper to wait for playback files dropdown to be populated
+function waitForPlaybackFilesLoaded() {
+    return new Promise((resolve) => {
+        const check = () => {
+            const select = document.getElementById('playbackFile');
+            if (select.options.length > 1) {
+                resolve();
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
+}
+
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Start loading dropdowns
     loadSubstances();
     loadPlaybackFiles();
     updatePreview();
@@ -568,6 +686,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add change listeners to update preview
     document.getElementById('channel1Substance').addEventListener('change', updatePreview);
     document.getElementById('channel2Substance').addEventListener('change', updatePreview);
+
+    // Check if we're copying from an existing experiment
+    const sourceId = getSourceExperimentId();
+    if (sourceId) {
+        await loadSourceExperiment(sourceId);
+    }
 });
 </script>
 {% endblock %}

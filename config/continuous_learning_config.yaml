@@ -123,14 +123,14 @@ orchestration:
   drift_score_threshold: 0.5  # Alert if KL divergence > 0.5
 
   # Email settings
-  # IMPORTANT: Set EMAIL_PASSWORD environment variable before running!
-  # Example: export EMAIL_PASSWORD="your-app-password"
+  # Password is loaded from ../.env file (EMAIL_PASSWORD key)
+  # This is more secure than shell environment variables
   email_recipients:
-    - user@example.com  # Replace with actual email
+    - bernd.jagla@pasteur.fr  # Replace with actual email
   email_smtp_server: smtp.gmail.com
-  email_smtp_port: 587
-  email_sender: noreply@example.com  # Replace with actual sender
-  email_password: null  # Will be read from EMAIL_PASSWORD env var
+  email_smtp_port: 465  # Use SSL (465) instead of STARTTLS (587) for better compatibility
+  email_sender: bernd.jagla@gmail.com  # Replace with actual sender
+  email_password: null  # Loaded from ../.env file automatically
 
   # Reporting
   weekly_report_day: Monday
@@ -156,7 +156,7 @@ orchestration:
 #        --test-hours 24
 #
 # 2. Production mode (runs forever):
-#    export EMAIL_PASSWORD="your-app-password"
+#    # Ensure EMAIL_PASSWORD is set in ../.env file
 #    python -m src.continuous.orchestrator \
 #        --config config/continuous_learning_config.yaml \
 #        --db data/continuous/features.db \

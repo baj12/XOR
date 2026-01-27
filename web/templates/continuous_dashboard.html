@@ -872,47 +872,17 @@ async function startExperiment(experimentId) {
     }
 }
 
-// Re-run (duplicate) experiment
-async function rerunExperiment(experimentId, experimentName) {
-    const message = `Re-run "${experimentName}" with the same configuration?\n\n` +
-                    `A new experiment will be created with an updated name (e.g., "${experimentName} (2)").\n\n` +
-                    `Would you like to start it immediately?`;
-
-    // Ask if user wants to start immediately
-    const shouldStart = confirm(message);
-    if (shouldStart === null) return; // User cancelled first dialog
-
-    // If user clicked Cancel on first dialog, ask if they want to create without starting
-    const createOnly = !shouldStart && confirm('Create the experiment without starting it?');
-    if (!shouldStart && !createOnly) return; // User doesn't want to do anything
-
-    const autoStart = shouldStart;
-
-    try {
-        const response = await fetch(`/api/continuous/experiments/${experimentId}/duplicate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ auto_start: autoStart })
-        });
-        const data = await response.json();
-
-        if (data.success) {
-            const statusMsg = data.started
-                ? `Experiment "${data.experiment_name}" created and started!`
-                : `Experiment "${data.experiment_name}" created successfully!`;
-
-            alert(statusMsg + `\n\nNew ID: ${data.experiment_id}`);
-
-            // Close current modal and refresh
-            bootstrap.Modal.getInstance(document.getElementById('experimentModal')).hide();
-            refreshDashboard();
-        } else {
-            alert(`Failed to duplicate experiment: ${data.error}`);
-        }
-    } catch (error) {
-        console.error('Error duplicating experiment:', error);
-        alert('An error occurred while duplicating the experiment');
+// Re-run (duplicate) experiment - redirects to form with pre-filled values
+function rerunExperiment(experimentId, experimentName) {
+    // Close any open modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('experimentModal'));
+    if (modal) {
+        modal.hide();
     }
+
+    // Redirect to create form with source experiment ID
+    // The form will load the experiment data and pre-fill all fields
+    window.location.href = `/continuous/create?from=${encodeURIComponent(experimentId)}`;
 }
 
 // Filter experiments
@@ -961,6 +931,23 @@ function renderStatsTab(stats) {
     const alerts = stats.alerts || {};
     const accuracyHistory = stats.accuracy_history || [];
 
+    const tableId = 'accuracyTrendTable_' + Date.now();
+
+    setTimeout(() => {
+        if (document.getElementById(tableId)) {
+            $(`#${tableId}`).DataTable({
+                pageLength: 10,
+                order: [[0, 'desc']],
+                language: {
+                    search: "Filter:",
+                    info: "_TOTAL_ entries",
+                    paginate: { previous: "<", next: ">" }
+                },
+                dom: 'ftp'
+            });
+        }
+    }, 100);
+
     return `
         <div class="metrics-grid">
             <div class="metric-card">
@@ -993,7 +980,7 @@ function renderStatsTab(stats) {
         <div class="mt-4">
             <h6><i class="bi bi-graph-up"></i> Accuracy Trend</h6>
             <div class="table-responsive">
-                <table class="table table-sm results-table">
+                <table class="table table-sm results-table" id="${tableId}">
                     <thead>
                         <tr>
                             <th>Cycle</th>
@@ -1004,9 +991,9 @@ function renderStatsTab(stats) {
                     <tbody>
                         ${accuracyHistory.map(item => `
                             <tr>
-                                <td>#${item.cycle_number}</td>
-                                <td><strong>${(item.model_accuracy * 100).toFixed(1)}%</strong></td>
-                                <td>${formatDateTime(item.end_time)}</td>
+                                <td data-order="${item.cycle_number}">#${item.cycle_number}</td>
+                                <td data-order="${item.model_accuracy}"><strong>${(item.model_accuracy * 100).toFixed(1)}%</strong></td>
+                                <td data-order="${item.end_time}">${formatDateTime(item.end_time)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -1023,9 +1010,26 @@ function renderCyclesTab(cycles) {
         return '<p class="text-muted text-center p-4">No cycles completed yet</p>';
     }
 
+    const tableId = 'cyclesTable_' + Date.now();
+
+    setTimeout(() => {
+        if (document.getElementById(tableId)) {
+            $(`#${tableId}`).DataTable({
+                pageLength: 10,
+                lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+                order: [[0, 'desc']],
+                language: {
+                    search: "Search cycles:",
+                    info: "Showing _START_ to _END_ of _TOTAL_ cycles",
+                    paginate: { previous: "Previous", next: "Next" }
+                }
+            });
+        }
+    }, 100);
+
     return `
         <div class="table-responsive">
-            <table class="table table-hover results-table">
+            <table class="table table-hover results-table" id="${tableId}">
                 <thead class="table-light">
                     <tr>
                         <th>Cycle #</th>
@@ -1040,13 +1044,13 @@ function renderCyclesTab(cycles) {
                 <tbody>
                     ${cycles.map(cycle => `
                         <tr>
-                            <td><strong>#${cycle.cycle_number}</strong></td>
+                            <td data-order="${cycle.cycle_number}"><strong>#${cycle.cycle_number}</strong></td>
                             <td><span class="badge bg-${getCycleStatusColor(cycle.status)}">${cycle.status}</span></td>
-                            <td>${cycle.qc_passed === true ? '<i class="bi bi-check-circle-fill text-success"></i>' : cycle.qc_passed === false ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '—'}</td>
-                            <td>${cycle.qc_separation_score ? cycle.qc_separation_score.toFixed(3) : '—'}</td>
-                            <td>${cycle.model_accuracy ? '<strong>' + (cycle.model_accuracy * 100).toFixed(1) + '%</strong>' : '—'}</td>
-                            <td>${cycle.training_time_seconds ? (cycle.training_time_seconds / 60).toFixed(1) + ' min' : '—'}</td>
-                            <td>${cycle.end_time ? formatDateTime(cycle.end_time) : '—'}</td>
+                            <td data-order="${cycle.qc_passed === true ? 1 : cycle.qc_passed === false ? 0 : -1}">${cycle.qc_passed === true ? '<i class="bi bi-check-circle-fill text-success"></i>' : cycle.qc_passed === false ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '—'}</td>
+                            <td data-order="${cycle.qc_separation_score || 0}">${cycle.qc_separation_score ? cycle.qc_separation_score.toFixed(3) : '—'}</td>
+                            <td data-order="${cycle.model_accuracy || 0}">${cycle.model_accuracy ? '<strong>' + (cycle.model_accuracy * 100).toFixed(1) + '%</strong>' : '—'}</td>
+                            <td data-order="${cycle.training_time_seconds || 0}">${cycle.training_time_seconds ? (cycle.training_time_seconds / 60).toFixed(1) + ' min' : '—'}</td>
+                            <td data-order="${cycle.end_time || ''}">${cycle.end_time ? formatDateTime(cycle.end_time) : '—'}</td>
                         </tr>
                     `).join('')}
                 </tbody>

@@ -163,6 +163,8 @@ class ContinuousRecordingOrchestrator:
         """
         Start a new recording cycle.
 
+        Handles server cooldown periods (503 responses) by waiting and retrying.
+
         Returns:
             session_id if successful, None if failed
         """
@@ -183,13 +185,52 @@ class ContinuousRecordingOrchestrator:
                 'output_prefix': f"{self.config['output_prefix']}_exp{self.experiment_id}_cycle{cycle_number}"
             }
 
-            # Start recording
-            response = requests.post(
-                f"{rubix_url}/api/v1/recordings/start",
-                json=params,
-                timeout=30
-            )
-            response.raise_for_status()
+            # Retry logic for cooldown handling
+            max_retries = 5
+            base_wait = 10  # seconds
+
+            for attempt in range(max_retries):
+                # Start recording
+                response = requests.post(
+                    f"{rubix_url}/api/v1/recordings/start",
+                    json=params,
+                    timeout=30
+                )
+
+                # Handle 503 cooldown response
+                if response.status_code == 503:
+                    try:
+                        error_data = response.json()
+                        cooldown_remaining = error_data.get('cooldown_remaining_seconds', 45)
+                        self.logger.info(
+                            f"Server in cooldown period, waiting {cooldown_remaining:.1f}s "
+                            f"(attempt {attempt + 1}/{max_retries})"
+                        )
+                        # Wait for cooldown plus small buffer
+                        await asyncio.sleep(cooldown_remaining + 2)
+                        continue
+                    except Exception:
+                        # If we can't parse the response, use exponential backoff
+                        wait_time = base_wait * (2 ** attempt)
+                        self.logger.warning(
+                            f"Server returned 503, waiting {wait_time}s "
+                            f"(attempt {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                # For other errors, raise immediately
+                response.raise_for_status()
+                break  # Success, exit retry loop
+            else:
+                # All retries exhausted
+                self.logger.error(f"Failed to start recording after {max_retries} attempts (server cooldown)")
+                self.log_alert('rubix44_error',
+                              f"Failed to start recording: server cooldown persisted after {max_retries} retries",
+                              severity='error', cycle_number=cycle_number)
+                self.update_cycle_status(cycle_number, 'failed',
+                                        error_message='Server cooldown timeout')
+                return None
 
             result = response.json()
 
@@ -332,12 +373,21 @@ class ContinuousRecordingOrchestrator:
                 self.logger.error(f"Error checking recording status: {e}")
                 await asyncio.sleep(30)  # Wait and retry
 
-    def get_recording_filename(self, session_id: str) -> Optional[str]:
+    def get_recording_filename(self, session_id: str, cycle_number: int) -> Optional[str]:
         """
         Get the actual stereo WAV filename for a session by querying history.
 
+        The rubix44 API returns a simple timestamp ID (e.g., "20260126_184929") from
+        the start endpoint, but the history uses a different format that includes
+        the output_prefix (e.g., "continuous_expexp_840aef31_cycle1_2026-01-26_18-49-29").
+
+        This method matches by:
+        1. First trying the output_prefix we used when starting the recording
+        2. Falling back to timestamp matching if needed
+
         Args:
-            session_id: Session ID returned from start recording
+            session_id: Session ID returned from start recording (e.g., "20260126_184929")
+            cycle_number: The cycle number for this recording
 
         Returns:
             Stereo WAV filename or None if not found
@@ -352,16 +402,49 @@ class ContinuousRecordingOrchestrator:
             response.raise_for_status()
             history = response.json()
 
-            # Find session in history
+            # Build the expected prefix we used when starting the recording
+            # Format: "continuous_exp{experiment_id}_cycle{N}"
+            expected_prefix = f"{self.config['output_prefix']}_exp{self.experiment_id}_cycle{cycle_number}"
+
+            # Convert session_id timestamp to the format used in history
+            # session_id format: "20260126_184929" -> "2026-01-26_18-49-29"
+            if len(session_id) == 15 and '_' in session_id:
+                date_part = session_id[:8]  # "20260126"
+                time_part = session_id[9:]  # "184929"
+                formatted_timestamp = (
+                    f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]}_"
+                    f"{time_part[:2]}-{time_part[2:4]}-{time_part[4:6]}"
+                )
+            else:
+                formatted_timestamp = None
+
+            # Find session in history - try multiple matching strategies
             for session in history:
-                if session['id'] == session_id:
-                    # Find stereo file
+                history_id = session.get('id', '')
+                history_prefix = session.get('prefix', '')
+
+                # Strategy 1: Match by prefix (most reliable)
+                if history_prefix == expected_prefix:
                     for file_info in session.get('files', []):
                         if '_stereo.wav' in file_info.get('name', ''):
-                            self.logger.info(f"Found stereo file for {session_id}: {file_info['name']}")
+                            self.logger.info(f"Found stereo file by prefix match: {file_info['name']}")
                             return file_info['name']
 
-            self.logger.error(f"No stereo file found for session {session_id}")
+                # Strategy 2: Match by formatted timestamp in the ID
+                if formatted_timestamp and formatted_timestamp in history_id:
+                    for file_info in session.get('files', []):
+                        if '_stereo.wav' in file_info.get('name', ''):
+                            self.logger.info(f"Found stereo file by timestamp match: {file_info['name']}")
+                            return file_info['name']
+
+                # Strategy 3: Exact ID match (original behavior, kept for compatibility)
+                if history_id == session_id:
+                    for file_info in session.get('files', []):
+                        if '_stereo.wav' in file_info.get('name', ''):
+                            self.logger.info(f"Found stereo file by exact ID match: {file_info['name']}")
+                            return file_info['name']
+
+            self.logger.error(f"No stereo file found for session {session_id} (prefix: {expected_prefix})")
             return None
 
         except Exception as e:
@@ -537,6 +620,21 @@ class ContinuousRecordingOrchestrator:
         cycle_id = self.create_recording_cycle(cycle_number)
 
         try:
+            # Step 0: Check server readiness (wait for cooldown if needed)
+            self.logger.info("Checking server readiness...")
+            if not await self.check_server_ready(timeout=180):
+                self.logger.error("Server not ready after waiting for cooldown")
+                self.update_cycle_status(cycle_number, 'failed',
+                                        error_message='Server not ready (cooldown timeout)')
+                return False
+
+            # Log memory status for diagnostics
+            mem_status = await self.get_server_memory_status()
+            if mem_status and 'process' in mem_status:
+                proc_mem = mem_status['process']
+                self.logger.info(f"Server memory: RSS={proc_mem.get('rss_mb', 'N/A'):.1f}MB, "
+                               f"VMS={proc_mem.get('vms_mb', 'N/A'):.1f}MB")
+
             # Step 1: Start recording
             session_id = await self.start_recording_cycle(cycle_number)
             if not session_id:
@@ -552,7 +650,7 @@ class ContinuousRecordingOrchestrator:
 
             # Step 4: Download recording file from rubix44 server
             # Get actual filename from history (format: prefix_timestamp_stereo.wav)
-            stereo_filename = self.get_recording_filename(session_id)
+            stereo_filename = self.get_recording_filename(session_id, cycle_number)
             if not stereo_filename:
                 self.logger.error(f"Could not find stereo file for session {session_id}")
                 self.update_cycle_status(cycle_number, 'failed',
@@ -800,6 +898,69 @@ class ContinuousRecordingOrchestrator:
         """Request orchestrator to stop gracefully"""
         self.logger.info("Stop requested")
         self.should_stop = True
+
+    async def check_server_ready(self, timeout: float = 120) -> bool:
+        """
+        Check if rubix44 server is ready to start a new recording.
+
+        Waits for any active cooldown period to complete.
+
+        Args:
+            timeout: Maximum seconds to wait for server to be ready
+
+        Returns:
+            True if server is ready, False if timeout or error
+        """
+        import requests
+        import os
+
+        rubix_url = os.getenv('RUBIX44_URL', 'http://10.0.0.58:5000')
+        start_time = time.time()
+
+        while (time.time() - start_time) < timeout:
+            try:
+                # Check server status
+                response = requests.get(f"{rubix_url}/api/v1/status", timeout=5)
+                response.raise_for_status()
+                status = response.json()
+
+                # Check cooldown
+                cooldown = status.get('cooldown', {})
+                if not cooldown.get('active', False):
+                    self.logger.debug("Server is ready (no cooldown active)")
+                    return True
+
+                # Wait for cooldown
+                remaining = cooldown.get('remaining_seconds', 45)
+                self.logger.info(f"Server in cooldown, waiting {remaining:.1f}s...")
+                await asyncio.sleep(min(remaining + 1, timeout - (time.time() - start_time)))
+
+            except requests.exceptions.RequestException as e:
+                self.logger.warning(f"Error checking server status: {e}")
+                await asyncio.sleep(5)
+
+        self.logger.error(f"Server not ready after {timeout}s timeout")
+        return False
+
+    async def get_server_memory_status(self) -> Optional[Dict]:
+        """
+        Get current memory status from rubix44 server.
+
+        Returns:
+            Memory status dict or None if unavailable
+        """
+        import requests
+        import os
+
+        rubix_url = os.getenv('RUBIX44_URL', 'http://10.0.0.58:5000')
+
+        try:
+            response = requests.get(f"{rubix_url}/api/v1/system/memory", timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.logger.warning(f"Could not get server memory status: {e}")
+            return None
 
 
 def main():
