@@ -68,6 +68,10 @@ class AutoQCValidator:
         self.auto_approve_threshold = 0.8  # Above this = auto-approve
         self.auto_reject_threshold = 0.6   # Below this = auto-reject
 
+        # Control experiment mode - when True, we EXPECT no separation (score ~0.5)
+        # This inverts the QC logic: low separation = pass, high separation = fail
+        self.expect_no_separation = False
+
         # Duration thresholds - derived from experiment's recording_duration_seconds
         # Default: allow ±10% tolerance
         default_duration = 3600  # 1 hour default
@@ -83,6 +87,11 @@ class AutoQCValidator:
             self.min_separation_score = config.get('auto_qc_min_separation_score', 0.7)
             self.auto_approve_threshold = config.get('auto_qc_auto_approve_threshold', 0.8)
             self.auto_reject_threshold = config.get('auto_qc_auto_reject_threshold', 0.6)
+
+            # Control experiment mode - expects no separation between classes
+            self.expect_no_separation = config.get('expect_no_separation', False)
+            if self.expect_no_separation:
+                logger.info("Control experiment mode: expecting NO class separation (score ~0.5)")
 
             # Calculate duration thresholds from recording_duration_seconds
             recording_duration = config.get('recording_duration_seconds', default_duration)
@@ -377,30 +386,53 @@ class AutoQCValidator:
 
         # Check 4: Class separation
         separation_ok, separation_score, silhouette_score = self.analyze_class_separation(features)
-        if not separation_ok:
-            notes.append(f"Poor class separation: {separation_score:.3f}")
 
         # Check 5: Audio quality
         audio_ok, audio_quality_score, audio_notes = self.check_audio_quality(wav_path)
         if not audio_ok:
             notes.append(audio_notes)
 
+        # Determine decision based on separation score and experiment mode
+        if self.expect_no_separation:
+            # CONTROL EXPERIMENT MODE: We expect NO separation (score ~0.5)
+            # Invert the logic: low separation = good, high separation = unexpected
+            if separation_score <= 0.55:  # Close to 0.5 = random = expected
+                decision = 'auto_approved'
+                passed = True
+                separation_ok = True
+                notes.append(f"Control: No separation as expected (score: {separation_score:.3f})")
+            elif separation_score <= 0.65:  # Slight separation - review
+                decision = 'manual_review'
+                passed = False
+                separation_ok = False
+                notes.append(f"Control: Unexpected slight separation (score: {separation_score:.3f})")
+            else:  # High separation - unexpected for control
+                decision = 'auto_rejected'
+                passed = False
+                separation_ok = False
+                notes.append(f"Control: Unexpected high separation (score: {separation_score:.3f})")
+
+            self.logger.info(f"QC Result (control mode): {decision}, Score: {separation_score:.3f}")
+        else:
+            # NORMAL MODE: We expect good separation
+            if not separation_ok:
+                notes.append(f"Poor class separation: {separation_score:.3f}")
+
+            if separation_score >= self.auto_approve_threshold:
+                decision = 'auto_approved'
+                passed = True
+            elif separation_score < self.auto_reject_threshold:
+                decision = 'auto_rejected'
+                passed = False
+            else:
+                decision = 'manual_review'
+                passed = False  # Don't auto-approve, needs human review
+                notes.append("Borderline quality - manual review recommended")
+
+            self.logger.info(f"QC Result: {decision}, Score: {separation_score:.3f}")
+
         # Overall decision
         all_checks_pass = all([duration_ok, file_ok, features_ok, separation_ok, audio_ok])
-
-        # Determine decision based on separation score
-        if separation_score >= self.auto_approve_threshold:
-            decision = 'auto_approved'
-            passed = True
-        elif separation_score < self.auto_reject_threshold:
-            decision = 'auto_rejected'
-            passed = False
-        else:
-            decision = 'manual_review'
-            passed = False  # Don't auto-approve, needs human review
-            notes.append("Borderline quality - manual review recommended")
-
-        self.logger.info(f"QC Result: {decision}, Score: {separation_score:.3f}")
 
         return QCResult(
             passed=passed,

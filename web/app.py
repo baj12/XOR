@@ -1179,10 +1179,10 @@ def api_continuous_experiments_create():
                  faraday_cage_used, researcher_name,
                  auto_qc_enabled, auto_qc_min_separation_score,
                  auto_qc_auto_approve_threshold, auto_qc_auto_reject_threshold,
-                 auto_qc_min_samples_per_channel,
+                 auto_qc_min_samples_per_channel, expect_no_separation,
                  training_sliding_window_weeks, training_batch_size, training_epochs_per_cycle,
                  status, current_cycle, total_cycles_expected, start_time, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
             """, (
                 experiment_id,
                 data['experiment_name'],
@@ -1204,6 +1204,7 @@ def api_continuous_experiments_create():
                 data.get('auto_qc_auto_approve_threshold', 0.8),
                 data.get('auto_qc_auto_reject_threshold', 0.6),
                 data.get('auto_qc_min_samples_per_channel', 900),
+                data.get('expect_no_separation', False),  # Control experiment mode
                 data.get('training_sliding_window_weeks', 2),
                 data.get('training_batch_size', 32),
                 data.get('training_epochs_per_cycle', 5),
@@ -1638,10 +1639,10 @@ def api_continuous_experiment_duplicate(experiment_id):
                  faraday_cage_used, researcher_name,
                  auto_qc_enabled, auto_qc_min_separation_score,
                  auto_qc_auto_approve_threshold, auto_qc_auto_reject_threshold,
-                 auto_qc_min_samples_per_channel,
+                 auto_qc_min_samples_per_channel, expect_no_separation,
                  training_sliding_window_weeks, training_batch_size, training_epochs_per_cycle,
                  status, current_cycle, total_cycles_expected, start_time, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
             """, (
                 new_experiment_id,
                 new_name,
@@ -1663,6 +1664,7 @@ def api_continuous_experiment_duplicate(experiment_id):
                 source_exp['auto_qc_auto_approve_threshold'],
                 source_exp['auto_qc_auto_reject_threshold'],
                 source_exp['auto_qc_min_samples_per_channel'],
+                source_exp.get('expect_no_separation', False),  # Control experiment mode
                 source_exp['training_sliding_window_weeks'],
                 source_exp['training_batch_size'],
                 source_exp['training_epochs_per_cycle'],

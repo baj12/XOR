@@ -248,7 +248,31 @@
                         <div class="collapse" id="advancedSettings">
                             <div class="advanced-settings">
                                 <!-- Auto-QC Settings -->
-                                <h6 class="mb-3"><i class="bi bi-shield-check"></i> Auto-QC Thresholds</h6>
+                                <h6 class="mb-3"><i class="bi bi-shield-check"></i> Auto-QC Settings</h6>
+
+                                <!-- Control Experiment Mode -->
+                                <div class="row mb-3">
+                                    <div class="col-12">
+                                        <div class="alert alert-info p-3 mb-0">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="expectNoSeparation">
+                                                <label class="form-check-label" for="expectNoSeparation">
+                                                    <strong>Control Experiment Mode</strong> - Expect NO class separation
+                                                </label>
+                                            </div>
+                                            <div class="help-text mt-2">
+                                                Enable for control experiments where both channels contain the same substance
+                                                (or similar substances). QC will pass when separation score is ~0.5 (random),
+                                                and fail if unexpected separation is detected.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <h6 class="mb-3 mt-4"><i class="bi bi-sliders2"></i> QC Thresholds</h6>
+                                <div class="help-text mb-3" id="thresholdsHelp">
+                                    These thresholds apply when expecting class separation. In control mode, low separation (~0.5) passes QC.
+                                </div>
 
                                 <div class="row mb-4">
                                     <div class="col-md-6 mb-3">
@@ -500,6 +524,7 @@ document.getElementById('experimentForm').addEventListener('submit', async (e) =
             beaker_2_content: document.getElementById('beaker2Content').value,
             faraday_cage_used: document.getElementById('faradayCage').checked,
             researcher_name: document.getElementById('researcherName').value,
+            expect_no_separation: document.getElementById('expectNoSeparation').checked,
             auto_qc_min_separation_score: parseFloat(document.getElementById('qcMinSeparation').value),
             auto_qc_auto_approve_threshold: parseFloat(document.getElementById('qcAutoApprove').value),
             auto_qc_auto_reject_threshold: parseFloat(document.getElementById('qcAutoReject').value),
@@ -616,6 +641,7 @@ async function loadSourceExperiment(experimentId) {
         document.getElementById('researcherName').value = exp.researcher_name || 'Autonomous';
 
         // Pre-fill advanced settings
+        document.getElementById('expectNoSeparation').checked = exp.expect_no_separation === true || exp.expect_no_separation === 1;
         document.getElementById('qcMinSeparation').value = exp.auto_qc_min_separation_score || 0.7;
         document.getElementById('qcAutoApprove').value = exp.auto_qc_auto_approve_threshold || 0.8;
         document.getElementById('qcAutoReject').value = exp.auto_qc_auto_reject_threshold || 0.6;

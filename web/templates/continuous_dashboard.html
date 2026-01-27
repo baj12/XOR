@@ -639,6 +639,7 @@ async function showExperimentDetails(experimentId) {
                                 <tr><th>Channel 1 (Left):</th><td><span class="badge bg-primary">${exp.channel_1_substance}</span></td></tr>
                                 <tr><th>Channel 2 (Right):</th><td><span class="badge bg-success">${exp.channel_2_substance}</span></td></tr>
                                 <tr><th>Faraday Cage:</th><td>${exp.faraday_cage_used ? '✓ Yes' : '✗ No'}</td></tr>
+                                <tr><th>Control Mode:</th><td>${exp.expect_no_separation ? '<span class="badge bg-warning text-dark">Expecting NO separation</span>' : '<span class="badge bg-info">Expecting separation</span>'}</td></tr>
                                 <tr><th>Researcher:</th><td>${exp.researcher_name || 'Autonomous'}</td></tr>
                             </table>
                         </div>
